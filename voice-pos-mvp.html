@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Voice POS MVP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+    font-family:Arial;
+    background:#f4f4f4;
+    margin:0;
+    padding:20px;
+}
+
+.container{
+    display:flex;
+    gap:20px;
+}
+
+.box{
+    background:white;
+    padding:15px;
+    border-radius:10px;
+    flex:1;
+    box-shadow:0 2px 8px rgba(0,0,0,0.1);
+}
+
+button{
+    padding:12px 18px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    margin-right:10px;
+}
+
+.start{background:#0077cc;color:white;}
+.stop{background:#cc3333;color:white;}
+
+.row{
+    display:flex;
+    justify-content:space-between;
+    padding:5px 0;
+}
+
+.total{
+    margin-top:10px;
+    font-weight:bold;
+    font-size:18px;
+}
+
+.receipt{
+    border-bottom:2px dashed #ccc;
+    margin-bottom:15px;
+    padding-bottom:10px;
+}
+
+.status{
+    margin-top:10px;
+    font-weight:bold;
+}
+
+</style>
+</head>
+
+<body>
+
+<h1>?? Voice POS MVP</h1>
+
+<button class="start" onclick="startVoice()">?? Start</button>
+<button class="stop" onclick="stopVoice()">?? Stop</button>
+
+<div id="status">bereit</div>
+<div id="speech">—</div>
+
+<br>
+
+<div class="container">
+
+<div class="box">
+<h2>?? Warenkorb</h2>
+<div id="cart"></div>
+<div class="total" id="sum">Gesamt: 0,00 €</div>
+</div>
+
+<div class="box">
+<h2>?? Bons</h2>
+<div id="receipts"></div>
+</div>
+
+</div>
+
+<script>
+
+const SHEET_URL =
+"https://opensheet.elk.sh/1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4/Artikel";
+
+let artikel = {};
+let cart = {};
+let history = [];
+let recognition;
+let listening = false;
+let orderNo = 1;
+
+// -------------------- LOAD SHEET --------------------
+
+async function loadArticles(){
+
+    const res = await fetch(SHEET_URL);
+    const data = await res.json();
+
+    data.forEach(a => {
+
+        const id = a.Nummer;
+
+        artikel[id] = {
+            name: a.Name,
+            price: parseFloat(a.Preis),
+            category: a.Kategorie
+        };
+    });
+
+    renderCart();
+}
+
+loadArticles();
+
+// -------------------- FORMAT --------------------
+
+function euro(v){
+    return v.toLocaleString("de-DE",{
+        minimumFractionDigits:2,
+        maximumFractionDigits:2
+    }) + " €";
+}
+
+// -------------------- CART --------------------
+
+function addItem(id, qty){
+
+    if(!cart[id]) cart[id] = {qty:0};
+
+    cart[id].qty += qty;
+}
+
+function renderCart(){
+
+    const el = document.getElementById("cart");
+    el.innerHTML = "";
+
+    let total = 0;
+
+    Object.keys(cart).forEach(id => {
+
+        const item = artikel[id];
+        const qty = cart[id].qty;
+
+        const sum = qty * item.price;
+        total += sum;
+
+        el.innerHTML += `
+        <div class="row">
+            <span>${qty}x ${item.name}</span>
+            <span>${euro(sum)}</span>
+        </div>`;
+    });
+
+    document.getElementById("sum").innerText =
+        "Gesamt: " + euro(total);
+}
+
+// -------------------- VOICE --------------------
+
+function parse(text){
+
+    text = text.toLowerCase();
+
+    if(text.includes("korrektur")){
+        undo();
+        return;
+    }
+
+    if(text.includes("bestellung abschließen")){
+        closeOrder();
+        return;
+    }
+
+    const voiceBlock = [];
+
+    const map = {
+        "einmal":"1 mal",
+        "zweimal":"2 mal",
+        "dreimal":"3 mal"
+    };
+
+    for(let k in map){
+        text = text.replaceAll(k,map[k]);
+    }
+
+    const numMap = {
+        "eins":"1","ein":"1",
+        "zwei":"2","drei":"3",
+        "vier":"4","acht":"8","neun":"9"
+    };
+
+    for(let k in numMap){
+        text = text.replaceAll(k,numMap[k]);
+    }
+
+    const parts = text.split("und");
+
+    parts.forEach(p => {
+
+        p = p.trim();
+
+        let m = p.match(/(\d+)\s*mal\s*(\d+)/);
+
+        if(m){
+
+            let qty = +m[1];
+            let id = m[2];
+
+            addItem(id, qty);
+
+            voiceBlock.push({id,qty});
+            return;
+        }
+
+        let s = p.match(/\b(\d+)\b/);
+
+        if(s){
+
+            let id = s[1];
+
+            addItem(id,1);
+
+            voiceBlock.push({id,qty:1});
+        }
+    });
+
+    history.push(voiceBlock);
+
+    document.getElementById("status")
+        .innerText = "? erkannt";
+
+    renderCart();
+}
+
+// -------------------- UNDO --------------------
+
+function undo(){
+
+    let last = history.pop();
+    if(!last) return;
+
+    last.forEach(i => {
+
+        cart[i.id].qty -= i.qty;
+
+        if(cart[i.id].qty <= 0){
+            delete cart[i.id];
+        }
+    });
+
+    renderCart();
+
+    document.getElementById("status")
+        .innerText = "? korrigiert";
+}
+
+// -------------------- CLOSE ORDER --------------------
+
+function closeOrder(){
+
+    let total = 0;
+    let html = `<div class="receipt">
+    <b>Bestellung ${orderNo}</b><br><br>`;
+
+    Object.keys(cart).forEach(id => {
+
+        let item = artikel[id];
+        let qty = cart[id].qty;
+        let sum = qty * item.price;
+
+        total += sum;
+
+        html += `
+        <div class="row">
+            <span>${qty}x ${item.name}</span>
+            <span>${euro(sum)}</span>
+        </div>`;
+    });
+
+    html += `<br><b>Gesamt: ${euro(total)}</b></div>`;
+
+    document.getElementById("receipts")
+        .innerHTML = html +
+        document.getElementById("receipts").innerHTML;
+
+    orderNo++;
+
+    cart = {};
+    history = [];
+
+    renderCart();
+
+    document.getElementById("status")
+        .innerText = "?? abgeschlossen";
+}
+
+// -------------------- VOICE ENGINE --------------------
+
+function startVoice(){
+
+    const SR =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
+
+    recognition = new SR();
+
+    recognition.lang = "de-DE";
+    recognition.continuous = true;
+
+    recognition.onstart = () => {
+        listening = true;
+        document.getElementById("status")
+            .innerText = "?? aktiv";
+    };
+
+    recognition.onresult = (e) => {
+
+        let text =
+            e.results[e.results.length-1][0].transcript;
+
+        document.getElementById("speech")
+            .innerText = text;
+
+        parse(text);
+    };
+
+    recognition.onend = () => {
+        if(listening) recognition.start();
+    };
+
+    recognition.start();
+}
+
+function stopVoice(){
+    listening = false;
+    recognition.stop();
+    document.getElementById("status")
+        .innerText = "gestoppt";
+}
+
+</script>
+
+</body>
+</html>
