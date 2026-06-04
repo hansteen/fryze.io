@@ -2,74 +2,22 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Voice POS Production v2</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POS Core v3 (Real Model)- RH</title>
 
 <style>
-body{
-    font-family:Arial;
-    background:#f4f4f4;
-    margin:0;
-    padding:20px;
-}
-
-.container{
-    display:flex;
-    gap:20px;
-}
-
-.box{
-    background:white;
-    padding:15px;
-    border-radius:10px;
-    flex:1;
-    box-shadow:0 2px 8px rgba(0,0,0,0.1);
-}
-
-button{
-    padding:12px 18px;
-    border:none;
-    border-radius:8px;
-    cursor:pointer;
-    margin-right:10px;
-}
-
-.start{background:#0077cc;color:white;}
-.stop{background:#cc3333;color:white;}
-
-.row{
-    display:flex;
-    justify-content:space-between;
-    padding:5px 0;
-}
-
-.small{
-    font-size:12px;
-    color:#666;
-}
-
-.total{
-    margin-top:10px;
-    font-weight:bold;
-    font-size:18px;
-}
-
-.receipt{
-    border-bottom:2px dashed #ccc;
-    margin-bottom:15px;
-    padding-bottom:10px;
-}
-
-.status{
-    margin-top:10px;
-    font-weight:bold;
-}
+body{font-family:Arial;background:#f4f4f4;padding:20px}
+.box{background:#fff;padding:15px;border-radius:10px}
+.row{display:flex;justify-content:space-between;margin:6px 0}
+.small{font-size:12px;color:#666}
+button{padding:10px;margin-right:10px}
+.start{background:#0077cc;color:#fff}
+.stop{background:#cc3333;color:#fff}
 </style>
 </head>
 
 <body>
 
-<h1>?? Voice POS Production v2 - RH</h1>
+<h2>?? POS Core v3 (Real Model)- RH</h2>
 
 <button class="start" onclick="startVoice()">?? Start</button>
 <button class="stop" onclick="stopVoice()">?? Stop</button>
@@ -77,389 +25,205 @@ button{
 <div id="status">bereit</div>
 <div id="speech">—</div>
 
-<br>
-
-<div class="container">
-
 <div class="box">
-<h2>?? Warenkorb</h2>
-<div id="cart"></div>
-<div class="total" id="sum">Gesamt: 0,00 €</div>
-</div>
-
-<div class="box">
-<h2>?? Bons</h2>
-<div id="receipts"></div>
-</div>
-
+<h3>?? Bestellung</h3>
+<div id="order"></div>
+<h3 id="total">0,00 €</h3>
 </div>
 
 <script>
 
-// ===================== SHEETS =====================
+// ===================== DATA =====================
 
 const SHEET_ID = "1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
 
-const ARTICLE_URL =
-`https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
-
-const MODIFIER_URL =
-`https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
-
-// ===================== DATA =====================
-
 let artikel = {};
 let modifier = {};
-let cart = {};
-let history = [];
-let orderNo = 1;
 
-// Voice
+let order = {
+  positions: []
+};
+
 let recognition;
 let isListening = false;
-let restartTimer = null;
 let lastText = "";
 
-// ===================== LOAD DATA =====================
+// ===================== LOAD SHEETS =====================
 
 async function loadArticles(){
 
-    const res = await fetch(ARTICLE_URL);
-    const data = await res.json();
+  const res = await fetch(`https://opensheet.elk.sh/${SHEET_ID}/Artikel`);
+  const data = await res.json();
 
-    console.log("ARTIKEL:", data);
-
-    data.forEach(a => {
-
-        artikel[a.Nummer] = {
-            name: a.Name,
-            price: parseFloat(a.Preis)
-        };
-    });
+  data.forEach(a => {
+    artikel[a.Nummer] = {
+      name: a.Name,
+      price: parseFloat(a.Preis)
+    };
+  });
 }
 
 async function loadModifiers(){
 
-    const res = await fetch(MODIFIER_URL);
-    const data = await res.json();
+  const res = await fetch(`https://opensheet.elk.sh/${SHEET_ID}/Modifier`);
+  const data = await res.json();
 
-    console.log("MODIFIER RAW:", data);
+  data.forEach(m => {
 
-    data.forEach(m => {
+    const aliases = (m.VoiceAlias || "").split(",");
 
-        const aliases = (m.VoiceAlias || "")
-            .split(",");
+    aliases.forEach(a => {
 
-        aliases.forEach(a => {
+      modifier[a.trim().toLowerCase()] = {
+        name: m.Name,
+        price: parseFloat(m.Preis || 0)
+      };
 
-            modifier[a.trim().toLowerCase()] = {
-                name: m.Name,
-                price: parseFloat(m.Preis || 0)
-            };
-        });
     });
 
-    console.log("MODIFIER MAP:", modifier);
+  });
 }
-
-// ===================== INIT =====================
 
 loadArticles();
 loadModifiers();
 
-// ===================== FORMAT =====================
+// ===================== CORE =====================
 
-function euro(v){
-    return v.toLocaleString("de-DE",{
-        minimumFractionDigits:2,
-        maximumFractionDigits:2
-    }) + " €";
+function addPosition(pos){
+
+  order.positions.push(pos);
+  render();
 }
 
-// ===================== CART =====================
+function render(){
 
-function addItem(id, qty, mods=[]){
+  let el = document.getElementById("order");
+  el.innerHTML = "";
 
-    if(!cart[id]){
-        cart[id] = {qty:0, modifiers:[]};
-    }
+  let total = 0;
 
-    cart[id].qty += qty;
+  order.positions.forEach(p => {
 
-    if(mods.length > 0){
-        cart[id].modifiers.push(...mods);
-    }
-}
+    let base = artikel[p.id];
+    if(!base) return;
 
-function renderCart(){
+    let modSum = 0;
+    let modText = "";
 
-    const el = document.getElementById("cart");
-    el.innerHTML = "";
+    (p.modifiers || []).forEach(mKey => {
 
-    let total = 0;
+      let m = modifier[mKey];
+      if(m){
+        modSum += m.price;
+        modText += m.name + " ";
+      }
 
-    Object.keys(cart).forEach(id => {
-
-        const item = artikel[id];
-        if(!item) return;
-
-        const qty = cart[id].qty;
-
-        let modPrice = 0;
-
-        (cart[id].modifiers || []).forEach(m => {
-            modPrice += m.price;
-        });
-
-        const sum = qty * (item.price + modPrice);
-        total += sum;
-
-        el.innerHTML += `
-        <div class="row">
-            <div>
-                ${qty}x ${item.name}
-                <div class="small">
-                    ${(cart[id].modifiers || []).map(m => m.name).join(", ")}
-                </div>
-            </div>
-            <div>${euro(sum)}</div>
-        </div>`;
     });
 
-    document.getElementById("sum").innerText =
-        "Gesamt: " + euro(total);
+    let sum = p.qty * (base.price + modSum);
+    total += sum;
+
+    el.innerHTML += `
+      <div class="row">
+        <div>
+          ${p.qty}x ${base.name}
+          <div class="small">${modText}</div>
+        </div>
+        <div>${sum.toFixed(2)} €</div>
+      </div>
+    `;
+  });
+
+  document.getElementById("total").innerText =
+    total.toFixed(2) + " €";
 }
 
-// ===================== VOICE PARSER =====================
+// ===================== VOICE =====================
 
 function parse(text){
 
-    text = text.toLowerCase().trim();
+  text = text.toLowerCase();
 
-    if(text.includes("korrektur")){
-        undo();
-        return;
+  if(text.includes("stop")){
+    stopVoice();
+    return;
+  }
+
+  let mods = [];
+
+  Object.keys(modifier).forEach(k => {
+    if(text.includes(k)){
+      mods.push(k);
     }
+  });
 
-    if(text.includes("bestellung abschließen")){
-        closeOrder();
-        return;
+  let match = text.match(/(\d+)\s*(?:mal)?\s*(?:die\s*)?(\d+)/);
+
+  if(match){
+
+    let qty = parseInt(match[1]);
+    let id = match[2];
+
+    addPosition({
+      id,
+      qty,
+      modifiers: mods
+    });
+
+  } else {
+
+    let single = text.match(/(\d+)/);
+
+    if(single && artikel[single[1]]){
+
+      addPosition({
+        id: single[1],
+        qty: 1,
+        modifiers: mods
+      });
+
     }
-
-    // normalize
-    text = text
-        .replaceAll("einmal","1 mal")
-        .replaceAll("zweimal","2 mal")
-        .replaceAll("dreimal","3 mal")
-        .replaceAll("die","")
-        .replaceAll("bitte","");
-
-    let foundMods = [];
-
-    // MODIFIER DETECTION
-    Object.keys(modifier).forEach(key => {
-
-        if(text.includes(key)){
-            foundMods.push(modifier[key]);
-        }
-    });
-
-    let parts = text.split("und");
-
-    let voiceBlock = [];
-
-    parts.forEach(p => {
-
-        p = p.trim();
-
-        let m = p.match(/(\d+)\s*mal\s*(\d+)/);
-
-        if(m){
-
-            let qty = parseInt(m[1]);
-            let id = m[2];
-
-            if(artikel[id]){
-
-                voiceBlock.push({
-                    id,
-                    qty,
-                    mods: foundMods
-                });
-            }
-            return;
-        }
-
-        let s = p.match(/\b(\d+)\b/);
-
-        if(s){
-
-            let id = s[1];
-
-            if(artikel[id]){
-
-                voiceBlock.push({
-                    id,
-                    qty:1,
-                    mods: foundMods
-                });
-            }
-        }
-    });
-
-    if(voiceBlock.length > 0){
-
-        voiceBlock.forEach(v => {
-            addItem(v.id, v.qty, v.mods);
-        });
-
-        history.push(voiceBlock);
-    }
-
-    renderCart();
-
-    document.getElementById("status").innerText =
-        voiceBlock.length ? "? erkannt" : "? nichts erkannt";
-}
-
-// ===================== UNDO =====================
-
-function undo(){
-
-    let last = history.pop();
-    if(!last) return;
-
-    last.forEach(i => {
-
-        if(cart[i.id]){
-
-            cart[i.id].qty -= i.qty;
-
-            if(cart[i.id].qty <= 0){
-                delete cart[i.id];
-            }
-        }
-    });
-
-    renderCart();
-
-    document.getElementById("status").innerText =
-        "? korrigiert";
-}
-
-// ===================== ORDER CLOSE =====================
-
-function closeOrder(){
-
-    let total = 0;
-
-    let html = `
-    <div class="receipt">
-    <b>Bestellung ${orderNo}</b><br><br>`;
-
-    Object.keys(cart).forEach(id => {
-
-        let item = artikel[id];
-        if(!item) return;
-
-        let qty = cart[id].qty;
-
-        let modPrice = 0;
-
-        (cart[id].modifiers || []).forEach(m => {
-            modPrice += m.price;
-        });
-
-        let sum = qty * (item.price + modPrice);
-
-        total += sum;
-
-        html += `
-        <div class="row">
-            <span>${qty}x ${item.name}</span>
-            <span>${euro(sum)}</span>
-        </div>`;
-    });
-
-    html += `<br><b>Gesamt: ${euro(total)}</b></div>`;
-
-    document.getElementById("receipts").innerHTML =
-        html + document.getElementById("receipts").innerHTML;
-
-    orderNo++;
-
-    cart = {};
-    history = [];
-
-    renderCart();
-
-    document.getElementById("status").innerText =
-        "?? abgeschlossen";
+  }
 }
 
 // ===================== VOICE ENGINE =====================
 
 function startVoice(){
 
-    const SR =
-        window.SpeechRecognition ||
-        window.webkitSpeechRecognition;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
 
-    recognition = new SR();
+  recognition.lang = "de-DE";
+  recognition.continuous = true;
 
-    recognition.lang = "de-DE";
-    recognition.continuous = true;
+  recognition.onresult = (e) => {
 
-    recognition.onstart = () => {
-        isListening = true;
-        document.getElementById("status").innerText = "?? aktiv";
-    };
+    let text = e.results[e.results.length-1][0].transcript;
 
-    recognition.onresult = (e) => {
+    if(text === lastText) return;
+    lastText = text;
 
-        const text =
-            e.results[e.results.length - 1][0].transcript.trim();
+    document.getElementById("speech").innerText = text;
 
-        if(text === lastText) return;
-        lastText = text;
+    parse(text);
+  };
 
-        document.getElementById("speech").innerText = text;
+  recognition.onstart = () => {
+    isListening = true;
+    document.getElementById("status").innerText = "?? aktiv";
+  };
 
-        parse(text);
-    };
+  recognition.onend = () => {
+    if(isListening) recognition.start();
+  };
 
-    recognition.onend = () => {
-        if(isListening){
-            scheduleRestart();
-        }
-    };
-
-    recognition.onerror = () => {
-        scheduleRestart();
-    };
-
-    recognition.start();
-}
-
-function scheduleRestart(){
-
-    clearTimeout(restartTimer);
-
-    restartTimer = setTimeout(() => {
-        try{ recognition.start(); }catch(e){}
-    }, 500);
+  recognition.start();
 }
 
 function stopVoice(){
-
-    isListening = false;
-
-    if(recognition){
-        recognition.stop();
-    }
-
-    document.getElementById("status").innerText =
-        "?? gestoppt";
+  isListening = false;
+  recognition.stop();
+  document.getElementById("status").innerText = "gestoppt";
 }
 
 </script>
