@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Voice POS Production RH</title>
+<title>Voice POS Production v2</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
@@ -43,6 +43,11 @@ button{
     padding:5px 0;
 }
 
+.small{
+    font-size:12px;
+    color:#666;
+}
+
 .total{
     margin-top:10px;
     font-weight:bold;
@@ -59,13 +64,12 @@ button{
     margin-top:10px;
     font-weight:bold;
 }
-
 </style>
 </head>
 
 <body>
 
-<h1>?? Voice POS Production</h1>
+<h1>?? Voice POS Production v2 - RH</h1>
 
 <button class="start" onclick="startVoice()">?? Start</button>
 <button class="stop" onclick="stopVoice()">?? Stop</button>
@@ -92,26 +96,38 @@ button{
 
 <script>
 
-const SHEET_URL =
-"https://opensheet.elk.sh/1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4/Artikel";
+// ===================== SHEETS =====================
+
+const SHEET_ID = "1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
+
+const ARTICLE_URL =
+`https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
+
+const MODIFIER_URL =
+`https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
+
+// ===================== DATA =====================
 
 let artikel = {};
+let modifier = {};
 let cart = {};
 let history = [];
 let orderNo = 1;
 
-// Voice Engine State
+// Voice
 let recognition;
 let isListening = false;
 let restartTimer = null;
 let lastText = "";
 
-// -------------------- LOAD SHEET --------------------
+// ===================== LOAD DATA =====================
 
 async function loadArticles(){
 
-    const res = await fetch(SHEET_URL);
+    const res = await fetch(ARTICLE_URL);
     const data = await res.json();
+
+    console.log("ARTIKEL:", data);
 
     data.forEach(a => {
 
@@ -120,13 +136,38 @@ async function loadArticles(){
             price: parseFloat(a.Preis)
         };
     });
-
-    renderCart();
 }
 
-loadArticles();
+async function loadModifiers(){
 
-// -------------------- FORMAT --------------------
+    const res = await fetch(MODIFIER_URL);
+    const data = await res.json();
+
+    console.log("MODIFIER RAW:", data);
+
+    data.forEach(m => {
+
+        const aliases = (m.VoiceAlias || "")
+            .split(",");
+
+        aliases.forEach(a => {
+
+            modifier[a.trim().toLowerCase()] = {
+                name: m.Name,
+                price: parseFloat(m.Preis || 0)
+            };
+        });
+    });
+
+    console.log("MODIFIER MAP:", modifier);
+}
+
+// ===================== INIT =====================
+
+loadArticles();
+loadModifiers();
+
+// ===================== FORMAT =====================
 
 function euro(v){
     return v.toLocaleString("de-DE",{
@@ -135,15 +176,19 @@ function euro(v){
     }) + " €";
 }
 
-// -------------------- CART --------------------
+// ===================== CART =====================
 
-function addItem(id, qty){
+function addItem(id, qty, mods=[]){
 
     if(!cart[id]){
-        cart[id] = {qty:0};
+        cart[id] = {qty:0, modifiers:[]};
     }
 
     cart[id].qty += qty;
+
+    if(mods.length > 0){
+        cart[id].modifiers.push(...mods);
+    }
 }
 
 function renderCart(){
@@ -156,15 +201,28 @@ function renderCart(){
     Object.keys(cart).forEach(id => {
 
         const item = artikel[id];
+        if(!item) return;
+
         const qty = cart[id].qty;
 
-        const sum = qty * item.price;
+        let modPrice = 0;
+
+        (cart[id].modifiers || []).forEach(m => {
+            modPrice += m.price;
+        });
+
+        const sum = qty * (item.price + modPrice);
         total += sum;
 
         el.innerHTML += `
         <div class="row">
-            <span>${qty}x ${item.name}</span>
-            <span>${euro(sum)}</span>
+            <div>
+                ${qty}x ${item.name}
+                <div class="small">
+                    ${(cart[id].modifiers || []).map(m => m.name).join(", ")}
+                </div>
+            </div>
+            <div>${euro(sum)}</div>
         </div>`;
     });
 
@@ -172,7 +230,7 @@ function renderCart(){
         "Gesamt: " + euro(total);
 }
 
-// -------------------- VOICE PARSER --------------------
+// ===================== VOICE PARSER =====================
 
 function parse(text){
 
@@ -188,37 +246,27 @@ function parse(text){
         return;
     }
 
-    const voiceBlock = [];
-
-    const qtyMap = {
-        "einmal":"1 mal",
-        "zweimal":"2 mal",
-        "dreimal":"3 mal",
-        "viermal":"4 mal"
-    };
-
-    for(let k in qtyMap){
-        text = text.replaceAll(k, qtyMap[k]);
-    }
-
-    const numMap = {
-        "eins":"1","ein":"1",
-        "zwei":"2","drei":"3",
-        "vier":"4","acht":"8","neun":"9"
-    };
-
-    for(let k in numMap){
-        text = text.replaceAll(k, numMap[k]);
-    }
-
+    // normalize
     text = text
-        .replaceAll(" die "," ")
-        .replaceAll(" den "," ")
-        .replaceAll(" bitte "," ");
+        .replaceAll("einmal","1 mal")
+        .replaceAll("zweimal","2 mal")
+        .replaceAll("dreimal","3 mal")
+        .replaceAll("die","")
+        .replaceAll("bitte","");
 
-    const parts = text.split("und");
+    let foundMods = [];
 
-    let found = false;
+    // MODIFIER DETECTION
+    Object.keys(modifier).forEach(key => {
+
+        if(text.includes(key)){
+            foundMods.push(modifier[key]);
+        }
+    });
+
+    let parts = text.split("und");
+
+    let voiceBlock = [];
 
     parts.forEach(p => {
 
@@ -233,12 +281,12 @@ function parse(text){
 
             if(artikel[id]){
 
-                addItem(id, qty);
-
-                voiceBlock.push({id,qty});
-                found = true;
+                voiceBlock.push({
+                    id,
+                    qty,
+                    mods: foundMods
+                });
             }
-
             return;
         }
 
@@ -250,25 +298,31 @@ function parse(text){
 
             if(artikel[id]){
 
-                addItem(id,1);
-
-                voiceBlock.push({id,qty:1});
-                found = true;
+                voiceBlock.push({
+                    id,
+                    qty:1,
+                    mods: foundMods
+                });
             }
         }
     });
 
-    if(found){
+    if(voiceBlock.length > 0){
+
+        voiceBlock.forEach(v => {
+            addItem(v.id, v.qty, v.mods);
+        });
+
         history.push(voiceBlock);
     }
 
     renderCart();
 
     document.getElementById("status").innerText =
-        found ? "? erkannt" : "? nichts erkannt";
+        voiceBlock.length ? "? erkannt" : "? nichts erkannt";
 }
 
-// -------------------- UNDO --------------------
+// ===================== UNDO =====================
 
 function undo(){
 
@@ -277,10 +331,13 @@ function undo(){
 
     last.forEach(i => {
 
-        cart[i.id].qty -= i.qty;
+        if(cart[i.id]){
 
-        if(cart[i.id].qty <= 0){
-            delete cart[i.id];
+            cart[i.id].qty -= i.qty;
+
+            if(cart[i.id].qty <= 0){
+                delete cart[i.id];
+            }
         }
     });
 
@@ -290,7 +347,7 @@ function undo(){
         "? korrigiert";
 }
 
-// -------------------- CLOSE ORDER --------------------
+// ===================== ORDER CLOSE =====================
 
 function closeOrder(){
 
@@ -303,8 +360,17 @@ function closeOrder(){
     Object.keys(cart).forEach(id => {
 
         let item = artikel[id];
+        if(!item) return;
+
         let qty = cart[id].qty;
-        let sum = qty * item.price;
+
+        let modPrice = 0;
+
+        (cart[id].modifiers || []).forEach(m => {
+            modPrice += m.price;
+        });
+
+        let sum = qty * (item.price + modPrice);
 
         total += sum;
 
@@ -331,24 +397,18 @@ function closeOrder(){
         "?? abgeschlossen";
 }
 
-// -------------------- VOICE ENGINE (PRODUCTION) --------------------
+// ===================== VOICE ENGINE =====================
 
-function initVoice(){
+function startVoice(){
 
     const SR =
         window.SpeechRecognition ||
         window.webkitSpeechRecognition;
 
-    if(!SR){
-        alert("SpeechRecognition nicht verfügbar");
-        return;
-    }
-
     recognition = new SR();
 
     recognition.lang = "de-DE";
     recognition.continuous = true;
-    recognition.interimResults = false;
 
     recognition.onstart = () => {
         isListening = true;
@@ -368,19 +428,17 @@ function initVoice(){
         parse(text);
     };
 
-    recognition.onerror = (e) => {
-
-        console.log("voice error", e.error);
-
-        scheduleRestart();
-    };
-
     recognition.onend = () => {
-
         if(isListening){
             scheduleRestart();
         }
     };
+
+    recognition.onerror = () => {
+        scheduleRestart();
+    };
+
+    recognition.start();
 }
 
 function scheduleRestart(){
@@ -388,28 +446,13 @@ function scheduleRestart(){
     clearTimeout(restartTimer);
 
     restartTimer = setTimeout(() => {
-
-        try{
-            recognition.start();
-        }catch(e){}
-
-    }, 600);
-}
-
-function startVoice(){
-
-    if(isListening) return;
-
-    initVoice();
-
-    recognition.start();
+        try{ recognition.start(); }catch(e){}
+    }, 500);
 }
 
 function stopVoice(){
 
     isListening = false;
-
-    clearTimeout(restartTimer);
 
     if(recognition){
         recognition.stop();
