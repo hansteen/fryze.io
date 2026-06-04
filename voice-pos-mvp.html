@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Voice POS MVP</title>
+<title>Voice POS Production</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
@@ -65,7 +65,7 @@ button{
 
 <body>
 
-<h1>?? Voice POS MVP</h1>
+<h1>?? Voice POS Production</h1>
 
 <button class="start" onclick="startVoice()">?? Start</button>
 <button class="stop" onclick="stopVoice()">?? Stop</button>
@@ -98,9 +98,13 @@ const SHEET_URL =
 let artikel = {};
 let cart = {};
 let history = [];
-let recognition;
-let listening = false;
 let orderNo = 1;
+
+// Voice Engine State
+let recognition;
+let isListening = false;
+let restartTimer = null;
+let lastText = "";
 
 // -------------------- LOAD SHEET --------------------
 
@@ -111,12 +115,9 @@ async function loadArticles(){
 
     data.forEach(a => {
 
-        const id = a.Nummer;
-
-        artikel[id] = {
+        artikel[a.Nummer] = {
             name: a.Name,
-            price: parseFloat(a.Preis),
-            category: a.Kategorie
+            price: parseFloat(a.Preis)
         };
     });
 
@@ -138,7 +139,9 @@ function euro(v){
 
 function addItem(id, qty){
 
-    if(!cart[id]) cart[id] = {qty:0};
+    if(!cart[id]){
+        cart[id] = {qty:0};
+    }
 
     cart[id].qty += qty;
 }
@@ -169,11 +172,11 @@ function renderCart(){
         "Gesamt: " + euro(total);
 }
 
-// -------------------- VOICE --------------------
+// -------------------- VOICE PARSER --------------------
 
 function parse(text){
 
-    text = text.toLowerCase();
+    text = text.toLowerCase().trim();
 
     if(text.includes("korrektur")){
         undo();
@@ -187,14 +190,15 @@ function parse(text){
 
     const voiceBlock = [];
 
-    const map = {
+    const qtyMap = {
         "einmal":"1 mal",
         "zweimal":"2 mal",
-        "dreimal":"3 mal"
+        "dreimal":"3 mal",
+        "viermal":"4 mal"
     };
 
-    for(let k in map){
-        text = text.replaceAll(k,map[k]);
+    for(let k in qtyMap){
+        text = text.replaceAll(k, qtyMap[k]);
     }
 
     const numMap = {
@@ -204,10 +208,17 @@ function parse(text){
     };
 
     for(let k in numMap){
-        text = text.replaceAll(k,numMap[k]);
+        text = text.replaceAll(k, numMap[k]);
     }
 
+    text = text
+        .replaceAll(" die "," ")
+        .replaceAll(" den "," ")
+        .replaceAll(" bitte "," ");
+
     const parts = text.split("und");
+
+    let found = false;
 
     parts.forEach(p => {
 
@@ -217,12 +228,17 @@ function parse(text){
 
         if(m){
 
-            let qty = +m[1];
+            let qty = parseInt(m[1]);
             let id = m[2];
 
-            addItem(id, qty);
+            if(artikel[id]){
 
-            voiceBlock.push({id,qty});
+                addItem(id, qty);
+
+                voiceBlock.push({id,qty});
+                found = true;
+            }
+
             return;
         }
 
@@ -232,18 +248,24 @@ function parse(text){
 
             let id = s[1];
 
-            addItem(id,1);
+            if(artikel[id]){
 
-            voiceBlock.push({id,qty:1});
+                addItem(id,1);
+
+                voiceBlock.push({id,qty:1});
+                found = true;
+            }
         }
     });
 
-    history.push(voiceBlock);
-
-    document.getElementById("status")
-        .innerText = "? erkannt";
+    if(found){
+        history.push(voiceBlock);
+    }
 
     renderCart();
+
+    document.getElementById("status").innerText =
+        found ? "? erkannt" : "? nichts erkannt";
 }
 
 // -------------------- UNDO --------------------
@@ -264,8 +286,8 @@ function undo(){
 
     renderCart();
 
-    document.getElementById("status")
-        .innerText = "? korrigiert";
+    document.getElementById("status").innerText =
+        "? korrigiert";
 }
 
 // -------------------- CLOSE ORDER --------------------
@@ -273,7 +295,9 @@ function undo(){
 function closeOrder(){
 
     let total = 0;
-    let html = `<div class="receipt">
+
+    let html = `
+    <div class="receipt">
     <b>Bestellung ${orderNo}</b><br><br>`;
 
     Object.keys(cart).forEach(id => {
@@ -293,9 +317,8 @@ function closeOrder(){
 
     html += `<br><b>Gesamt: ${euro(total)}</b></div>`;
 
-    document.getElementById("receipts")
-        .innerHTML = html +
-        document.getElementById("receipts").innerHTML;
+    document.getElementById("receipts").innerHTML =
+        html + document.getElementById("receipts").innerHTML;
 
     orderNo++;
 
@@ -304,52 +327,96 @@ function closeOrder(){
 
     renderCart();
 
-    document.getElementById("status")
-        .innerText = "?? abgeschlossen";
+    document.getElementById("status").innerText =
+        "?? abgeschlossen";
 }
 
-// -------------------- VOICE ENGINE --------------------
+// -------------------- VOICE ENGINE (PRODUCTION) --------------------
 
-function startVoice(){
+function initVoice(){
 
     const SR =
         window.SpeechRecognition ||
         window.webkitSpeechRecognition;
 
+    if(!SR){
+        alert("SpeechRecognition nicht verfügbar");
+        return;
+    }
+
     recognition = new SR();
 
     recognition.lang = "de-DE";
     recognition.continuous = true;
+    recognition.interimResults = false;
 
     recognition.onstart = () => {
-        listening = true;
-        document.getElementById("status")
-            .innerText = "?? aktiv";
+        isListening = true;
+        document.getElementById("status").innerText = "?? aktiv";
     };
 
     recognition.onresult = (e) => {
 
-        let text =
-            e.results[e.results.length-1][0].transcript;
+        const text =
+            e.results[e.results.length - 1][0].transcript.trim();
 
-        document.getElementById("speech")
-            .innerText = text;
+        if(text === lastText) return;
+        lastText = text;
+
+        document.getElementById("speech").innerText = text;
 
         parse(text);
     };
 
-    recognition.onend = () => {
-        if(listening) recognition.start();
+    recognition.onerror = (e) => {
+
+        console.log("voice error", e.error);
+
+        scheduleRestart();
     };
+
+    recognition.onend = () => {
+
+        if(isListening){
+            scheduleRestart();
+        }
+    };
+}
+
+function scheduleRestart(){
+
+    clearTimeout(restartTimer);
+
+    restartTimer = setTimeout(() => {
+
+        try{
+            recognition.start();
+        }catch(e){}
+
+    }, 600);
+}
+
+function startVoice(){
+
+    if(isListening) return;
+
+    initVoice();
 
     recognition.start();
 }
 
 function stopVoice(){
-    listening = false;
-    recognition.stop();
-    document.getElementById("status")
-        .innerText = "gestoppt";
+
+    isListening = false;
+
+    clearTimeout(restartTimer);
+
+    if(recognition){
+        recognition.stop();
+    }
+
+    document.getElementById("status").innerText =
+        "?? gestoppt";
 }
 
 </script>
