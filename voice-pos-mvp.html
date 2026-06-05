@@ -31,6 +31,32 @@ const MODIFIER_URL=`https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
 let artikel={},modifier={},modifierDisplay=[];
 let positions=[],history=[],orderNo=1;
 let recognition,isListening=false,lastText="";
+
+const speechFixes = {
+ "mario":"mayo","majo":"mayo","neuen":"neun","neuem":"neun",
+ "schafe":"scharf","achten":"acht","dönern":"döner"
+};
+
+const numberMap = {
+ "eins":"1","ein":"1","zwei":"2","drei":"3","vier":"4",
+ "fünf":"5","sechs":"6","sieben":"7","acht":"8","achten":"8",
+ "neun":"9","neuen":"9","neuem":"9"
+};
+
+function normalizeSpeech(text){
+ text=normalizeSpeech(text);
+
+ Object.keys(speechFixes).forEach(k=>{
+   text=text.replaceAll(k,speechFixes[k]);
+ });
+
+ Object.keys(numberMap).forEach(k=>{
+   text=text.replaceAll(k,numberMap[k]);
+ });
+
+ return text;
+}
+
 const eur=v=>v.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 
 async function init(){
@@ -109,7 +135,7 @@ function addPosition(id,qty,mods){
 }
 
 function parse(text){
- text=text.toLowerCase();
+ text=normalizeSpeech(text);
 
  if(text.includes("korrektur")){
    history.pop();
@@ -157,7 +183,10 @@ function startVoice(){
  recognition.continuous=true;
 
  recognition.onresult=e=>{
-   const t=e.results[e.results.length-1][0].transcript.trim();
+   const result=e.results[e.results.length-1][0];
+const confidence=result.confidence || 1;
+if(confidence < 0.45) return;
+const t=result.transcript.trim();
    if(t===lastText) return;
    lastText=t;
    speech.innerText=t;
