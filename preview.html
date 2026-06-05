@@ -10,16 +10,16 @@ body{font-family:Arial;background:#f4f4f4;padding:20px}
 .small{font-size:12px;color:#666}
 button{padding:10px 14px;margin-right:8px}
 </style></head><body>
-<h2>Voice POS mit Modifier-Fenster</h2>
-<button onclick="startVoice()">🎤 Start</button>
-<button onclick="stopVoice()">🛑 Stop</button>
+<h2>Voice POS mit Parsing Update</h2>
+<button onclick="startVoice()">ðŸŽ¤ Start</button>
+<button onclick="stopVoice()">ðŸ›‘ Stop</button>
 <div id="status">bereit</div>
-<div id="speech">—</div><br>
+<div id="speech">â€”</div><br>
 
 <div class="grid">
 <div class="box"><h3>Artikel</h3><div id="menu"></div></div>
 <div class="box"><h3>Modifier</h3><div id="modifierList"></div></div>
-<div class="box"><h3>Bestellung</h3><div id="order"></div><h3 id="sum">0,00 €</h3></div>
+<div class="box"><h3>Bestellung</h3><div id="order"></div><h3 id="sum">0,00 â‚¬</h3></div>
 <div class="box"><h3>Bons</h3><div id="receipts"></div></div>
 </div>
 
@@ -34,12 +34,12 @@ let recognition,isListening=false,lastText="";
 
 const speechFixes = {
  "mario":"mayo","majo":"mayo","neuen":"neun","neuem":"neun",
- "schafe":"scharf","achten":"acht","dönern":"döner"
+ "schafe":"scharf","achten":"acht","dÃ¶nern":"dÃ¶ner"
 };
 
 const numberMap = {
  "eins":"1","ein":"1","zwei":"2","drei":"3","vier":"4",
- "fünf":"5","sechs":"6","sieben":"7","acht":"8","achten":"8",
+ "fÃ¼nf":"5","sechs":"6","sieben":"7","acht":"8","achten":"8",
  "neun":"9","neuen":"9","neuem":"9"
 };
 
@@ -57,7 +57,7 @@ function normalizeSpeech(text){
  return text;
 }
 
-const eur=v=>v.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
+const eur=v=>v.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})+" â‚¬";
 
 async function init(){
  const a=await fetch(ARTICLE_URL).then(r=>r.json());
@@ -135,45 +135,137 @@ function addPosition(id,qty,mods){
 }
 
 function parse(text){
- text=normalizeSpeech(text);
 
- if(text.includes("korrektur")){
-   history.pop();
-   positions.pop();
-   renderOrder();
-   return;
- }
+    console.log("RAW:", text);
 
- if(text.includes("bestellung abschließen")){
-   receipts.innerHTML=
-   `<div><b>Bestellung ${orderNo}</b>${order.innerHTML}
-   <b>Gesamt ${sum.innerText}</b><hr></div>`+receipts.innerHTML;
+    text = text.toLowerCase();
 
-   orderNo++;
-   positions=[]; history=[];
-   renderOrder();
-   return;
- }
+    // -------------------
+    // POS Interpretation
+    // -------------------
 
- text=text
- .replace("einmal","1 mal")
- .replace("zweimal","2 mal")
- .replace("dreimal","3 mal")
- .replace("nummer","");
+    const replacements = {
 
- let mods=[];
- Object.keys(modifier).forEach(k=>{
-   if(text.includes(k)) mods.push(modifier[k]);
- });
+        "mario":"mayo",
+        "majo":"mayo",
 
- let m=text.match(/(\d+)\s*mal\s*(\d+)/) || text.match(/(\d+)/);
- if(m){
-   let qty=1,id;
-   if(m.length===3){ qty=parseInt(m[1]); id=m[2];}
-   else id=m[1];
+        "neuen":"9",
+        "neuem":"9",
+        "neun":"9",
 
-   if(artikel[id]) addPosition(id,qty,mods);
- }
+        "achten":"8",
+        "acht":"8",
+
+        "eins":"1",
+        "ein":"1",
+
+        "zweimal":"2 mal",
+        "dreimal":"3 mal",
+        "viermal":"4 mal",
+
+        "nummer":"",
+
+        "mit ":""
+    };
+
+    Object.keys(replacements).forEach(k => {
+
+        text = text.replaceAll(
+            k,
+            replacements[k]
+        );
+    });
+
+    console.log("NORMALIZED:", text);
+
+    // -------------------
+    // Commands
+    // -------------------
+
+    if(text.includes("korrektur")){
+
+        history.pop();
+        positions.pop();
+
+        renderOrder();
+        return;
+    }
+
+    if(text.includes("bestellung abschließen")){
+
+        receipts.innerHTML =
+        `<div>
+            <b>Bestellung ${orderNo}</b>
+            ${order.innerHTML}
+            <b>Gesamt ${sum.innerText}</b>
+            <hr>
+        </div>`
+        + receipts.innerHTML;
+
+        orderNo++;
+
+        positions = [];
+        history = [];
+
+        renderOrder();
+
+        return;
+    }
+
+    // -------------------
+    // Modifier detection
+    // -------------------
+
+    let mods = [];
+
+    Object.keys(modifier).forEach(key => {
+
+        if(text.includes(key)){
+
+            mods.push(modifier[key]);
+        }
+    });
+
+    // -------------------
+    // Quantity
+    // -------------------
+
+    let qty = 1;
+
+    const qtyMatch =
+        text.match(/(\d+)\s*mal/);
+
+    if(qtyMatch){
+
+        qty =
+            parseInt(qtyMatch[1]);
+    }
+
+    // -------------------
+    // Article detection
+    // -------------------
+
+    let articleId = null;
+
+    Object.keys(artikel).forEach(id => {
+
+        const regex =
+            new RegExp(`\\b${id}\\b`);
+
+        if(regex.test(text)){
+
+            articleId = id;
+        }
+    });
+
+    if(articleId){
+
+        addPosition(
+            articleId,
+            qty,
+            mods
+        );
+    }
 }
 
 function startVoice(){
@@ -193,7 +285,7 @@ const t=result.transcript.trim();
    parse(t);
  };
 
- recognition.onstart=()=>status.innerText="🎤 aktiv";
+ recognition.onstart=()=>status.innerText="ðŸŽ¤ aktiv";
  recognition.onend=()=>{ if(isListening) recognition.start(); };
 
  isListening=true;
@@ -203,7 +295,7 @@ const t=result.transcript.trim();
 function stopVoice(){
  isListening=false;
  recognition&&recognition.stop();
- status.innerText="🛑 gestoppt";
+ status.innerText="ðŸ›‘ gestoppt";
 }
 
 init();
