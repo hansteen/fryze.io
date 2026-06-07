@@ -2,18 +2,18 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<title>Voice POS - Stable Full</title>
+<title>Voice POS System</title>
 
 <style>
 body {
   margin: 0;
   font-family: Arial;
-  background: #f2f2f2;
+  background: #f4f4f4;
 }
 
 header {
   background: #111;
-  color: white;
+  color: #fff;
   padding: 10px;
   display: flex;
   gap: 10px;
@@ -24,10 +24,12 @@ button {
   padding: 10px;
   border: none;
   cursor: pointer;
+  border-radius: 6px;
 }
 
 #start { background: #28a745; color: white; }
 #stop { background: #dc3545; color: white; }
+#finish { background: #ff9800; color: white; }
 
 .container {
   display: grid;
@@ -56,13 +58,12 @@ button {
 .item, .mod {
   padding: 6px;
   border-bottom: 1px solid #eee;
-  font-size: 14px;
 }
 
 .order-item {
-  background: white;
   padding: 6px;
-  margin-bottom: 5px;
+  background: white;
+  margin-bottom: 6px;
   border-left: 4px solid #2196f3;
 }
 
@@ -73,7 +74,6 @@ button {
   margin-bottom: 10px;
   border-left: 4px solid #ffcc00;
 }
-
 </style>
 </head>
 
@@ -83,6 +83,7 @@ button {
   ?? Voice POS
   <button id="start">Start</button>
   <button id="stop">Stop</button>
+  <button id="finish">Bestellung abschließen</button>
 </header>
 
 <div class="container">
@@ -124,8 +125,7 @@ let articles = [];
 let modifiers = [];
 
 let currentOrder = {
-  items: [],
-  modifiers: []
+  items: []
 };
 
 let bons = [];
@@ -178,10 +178,36 @@ function render() {
         <br><small>${i.modifiers.map(m => m.name).join(", ")}</small>
       </div>`
     ).join("");
+
+  document.getElementById("bons").innerHTML =
+    bons.map(b => `<div class="bon">${b}</div>`).join("");
 }
 
 // =====================
-// CALCULATION
+// QUANTITY PARSER
+// =====================
+function extractQty(text) {
+
+  const map = {
+    "eins": 1,
+    "ein": 1,
+    "eine": 1,
+    "zwei": 2,
+    "zweimal": 2,
+    "drei": 3,
+    "vier": 4
+  };
+
+  for (let k in map) {
+    if (text.includes(k)) return map[k];
+  }
+
+  const num = text.match(/\d+/);
+  return num ? parseInt(num[0]) : 1;
+}
+
+// =====================
+// TOTAL
 // =====================
 function calcTotal(order) {
   let total = 0;
@@ -212,32 +238,32 @@ recognition.onresult = (e) => {
 
   console.log("VOICE:", text);
 
-  // ?? CLOSE COMMAND (VOICE)
-  if (text.includes("bestellung abschließen") || text.includes("bon")) {
+  // CLOSE COMMAND
+  if (text.includes("bestellung abschließen")) {
     closeOrder();
     return;
   }
 
-  // ARTICLE MATCH (better)
+  const qty = extractQty(text);
+
   const article = articles.find(a =>
     text.includes(a.name.toLowerCase()) ||
     (a.voice && a.voice.split(",").some(v => text.includes(v.trim())))
+  );
+
+  const mod = modifiers.find(m =>
+    text.includes(m.name.toLowerCase()) ||
+    (m.voice && m.voice.split(",").some(v => text.includes(v.trim())))
   );
 
   if (article) {
     currentOrder.items.push({
       name: article.name,
       price: article.price,
-      qty: 1,
+      qty: qty,
       modifiers: []
     });
   }
-
-  // MODIFIER MATCH
-  const mod = modifiers.find(m =>
-    text.includes(m.name.toLowerCase()) ||
-    (m.voice && m.voice.split(",").some(v => text.includes(v.trim())))
-  );
 
   if (mod && currentOrder.items.length > 0) {
     currentOrder.items[currentOrder.items.length - 1].modifiers.push(mod);
@@ -258,10 +284,10 @@ function closeOrder() {
   let bon = `BON #${bonCounter}\n-----------------\n`;
 
   currentOrder.items.forEach(i => {
-    bon += `${i.qty}x ${i.name} ${i.price}€\n`;
+    bon += `${i.qty}x ${i.name} (${i.price}€)\n`;
 
-    if (i.modifiers.length > 0) {
-      bon += `  MOD: ${i.modifiers.map(m => m.name).join(", ")}\n`;
+    if (i.modifiers.length) {
+      bon += `  + ${i.modifiers.map(m => m.name).join(", ")}\n`;
     }
   });
 
@@ -271,7 +297,7 @@ function closeOrder() {
 
   bonCounter++;
 
-  currentOrder = { items: [], modifiers: [] };
+  currentOrder = { items: [] };
 
   render();
 }
@@ -281,10 +307,9 @@ function closeOrder() {
 // =====================
 document.getElementById("start").onclick = () => recognition.start();
 document.getElementById("stop").onclick = () => recognition.stop();
+document.getElementById("finish").onclick = closeOrder;
 
-// =====================
 // INIT
-// =====================
 loadData();
 
 </script>
