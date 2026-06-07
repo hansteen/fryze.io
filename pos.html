@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<title>Stable POS Fix Final</title>
+<title>Stable Voice POS vFinal</title>
 
 <style>
 body { margin:0; font-family:Arial; background:#f4f4f4; }
@@ -60,7 +60,7 @@ button { padding:8px; cursor:pointer; }
 <body>
 
 <header>
-?? Voice POS Stable
+?? Voice POS Stable FINAL
 <button id="start">Start</button>
 <button id="stop">Stop</button>
 <button id="finish">Bestellung abschließen</button>
@@ -110,15 +110,17 @@ let bonCounter = 1;
 // =====================
 // FORMAT
 // =====================
-function fmt(p){ return Number(p||0).toFixed(2); }
+function fmt(p){
+  return Number(p || 0).toFixed(2);
+}
 
 // =====================
-// LOAD
+// LOAD DATA
 // =====================
 async function loadData() {
 
-  const a = await fetch(ARTICLE_URL).then(r=>r.json());
-  const m = await fetch(MODIFIER_URL).then(r=>r.json());
+  const a = await fetch(ARTICLE_URL).then(r => r.json());
+  const m = await fetch(MODIFIER_URL).then(r => r.json());
 
   articles = a.map(x => ({
     id: Number(x.Nummer),
@@ -138,7 +140,7 @@ async function loadData() {
 }
 
 // =====================
-// QTY
+// QTY PARSER
 // =====================
 function extractQty(text) {
 
@@ -155,6 +157,41 @@ function extractQty(text) {
 
   const num = text.match(/\d+/);
   return num ? parseInt(num[0]) : 1;
+}
+
+// =====================
+// MODIFIER MATCHING (FIXED)
+// =====================
+function findModifier(text) {
+
+  return modifiers.find(m => {
+
+    const name = m.name.toLowerCase();
+    const aliases = (m.voice || "").split(",").map(a => a.trim().toLowerCase());
+
+    // ID match (103 etc.)
+    if (text.includes(String(m.id))) return true;
+
+    // Name match
+    if (text.includes(name)) return true;
+
+    // VoiceAlias match
+    if (aliases.some(a => text.includes(a))) return true;
+
+    return false;
+  });
+}
+
+// =====================
+// ARTICLE MATCHING
+// =====================
+function findArticle(text) {
+
+  return articles.find(a =>
+    text.includes(String(a.id)) ||
+    text.includes(a.name.toLowerCase()) ||
+    (a.voice && text.includes(a.voice))
+  );
 }
 
 // =====================
@@ -180,45 +217,44 @@ function render() {
     currentOrder.items.map(i =>
       `<div class="order-item">
         ${i.qty}x ${i.name} (${fmt(i.price)}€)
-        <br><small>${i.modifiers.map(m=>m.name).join(", ")}</small>
+        <br><small>${i.modifiers.map(m => m.name).join(", ")}</small>
       </div>`
     ).join("");
 
   document.getElementById("bons").innerHTML =
-    bons.map(b=>`<div class="bon">${b}</div>`).join("");
+    bons.map(b => `<div class="bon">${b}</div>`).join("");
 }
 
 // =====================
 // TOTAL
 // =====================
 function calcTotal(order){
-  let t=0;
+  let total = 0;
 
-  order.items.forEach(i=>{
-    t += i.price * i.qty;
-    i.modifiers.forEach(m=>{
-      t += m.price;
-    });
+  order.items.forEach(i => {
+    total += i.price * i.qty;
+    i.modifiers.forEach(m => total += m.price);
   });
 
-  return t;
+  return total;
 }
 
 // =====================
-// CLOSE ORDER (FIX SNAPSHOT)
+// CLOSE ORDER (SNAPSHOT FIX)
 // =====================
 function closeOrder(){
 
-  if(currentOrder.items.length===0) return;
+  if(currentOrder.items.length === 0) return;
 
   const snapshot = JSON.parse(JSON.stringify(currentOrder));
 
   let bon = `BON #${bonCounter}\n-----------------\n`;
 
-  snapshot.items.forEach(i=>{
+  snapshot.items.forEach(i => {
     bon += `${i.qty}x ${i.name} (${fmt(i.price)}€)\n`;
+
     if(i.modifiers.length){
-      bon += ` + ${i.modifiers.map(m=>m.name).join(", ")}\n`;
+      bon += ` + ${i.modifiers.map(m => `${m.name} (${fmt(m.price)})`).join(", ")}\n`;
     }
   });
 
@@ -238,12 +274,12 @@ function closeOrder(){
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const recognition = new SpeechRecognition();
 
-recognition.lang="de-DE";
-recognition.continuous=true;
+recognition.lang = "de-DE";
+recognition.continuous = true;
 
-recognition.onresult=(e)=>{
+recognition.onresult = (e) => {
 
-  const text=e.results[e.results.length-1][0].transcript.toLowerCase();
+  const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
 
   if(text.includes("bestellung abschließen")){
     closeOrder();
@@ -252,26 +288,20 @@ recognition.onresult=(e)=>{
 
   const qty = extractQty(text);
 
-  const article = articles.find(a =>
-    text.includes(a.id.toString()) ||
-    text.includes(a.name.toLowerCase())
-  );
-
-  const mod = modifiers.find(m =>
-    text.includes(m.name.toLowerCase())
-  );
+  const article = findArticle(text);
+  const mod = findModifier(text);
 
   if(article){
     currentOrder.items.push({
-      name:article.name,
-      price:article.price,
-      qty:qty,
-      modifiers:[]
+      name: article.name,
+      price: article.price,
+      qty: qty,
+      modifiers: []
     });
   }
 
   if(mod && currentOrder.items.length){
-    currentOrder.items[currentOrder.items.length-1].modifiers.push(mod);
+    currentOrder.items[currentOrder.items.length - 1].modifiers.push(mod);
   }
 
   render();
@@ -280,10 +310,11 @@ recognition.onresult=(e)=>{
 // =====================
 // BUTTONS
 // =====================
-document.getElementById("start").onclick=()=>recognition.start();
-document.getElementById("stop").onclick=()=>recognition.stop();
-document.getElementById("finish").onclick=closeOrder;
+document.getElementById("start").onclick = () => recognition.start();
+document.getElementById("stop").onclick = () => recognition.stop();
+document.getElementById("finish").onclick = closeOrder;
 
+// INIT
 loadData();
 
 </script>
