@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<title>Voice POS Fix Final</title>
+<title>Stable Voice POS</title>
 
 <style>
 body { margin:0; font-family:Arial; background:#f4f4f4; }
@@ -65,7 +65,7 @@ button {
 <body>
 
 <header>
-?? Voice POS Fix
+?? Voice POS Stable
 <button id="start">Start</button>
 <button id="stop">Stop</button>
 <button id="finish">Bestellung abschließen</button>
@@ -82,7 +82,7 @@ button {
 </div>
 
 <div class="center">
-<h3>Bestellung</h3>
+<h3>Aktuelle Bestellung</h3>
 <div id="order"></div>
 </div>
 
@@ -113,10 +113,10 @@ let bons = [];
 let bonCounter = 1;
 
 // =====================
-// FORMAT PRICE (IMPORTANT)
+// FORMAT
 // =====================
 function fmt(p) {
-  return Number(p).toFixed(2);
+  return Number(p || 0).toFixed(2);
 }
 
 // =====================
@@ -130,16 +130,58 @@ async function loadData() {
   articles = a.map(x => ({
     name: x.Name,
     price: Number(x.Preis),
-    voice: x.VoiceAlias
+    voice: (x.VoiceAlias || "").toLowerCase()
   }));
 
   modifiers = m.map(x => ({
     name: x.Name,
     price: Number(x.Preis || 0),
-    voice: x.VoiceAlias
+    voice: (x.VoiceAlias || "").toLowerCase()
   }));
 
   render();
+}
+
+// =====================
+// QTY PARSER (FIX)
+// =====================
+function extractQty(text) {
+
+  const map = {
+    "eins": 1,
+    "ein": 1,
+    "eine": 1,
+    "zwei": 2,
+    "zweimal": 2,
+    "drei": 3,
+    "dreimal": 3,
+    "vier": 4,
+    "viermal": 4
+  };
+
+  for (let k in map) {
+    if (text.includes(k)) return map[k];
+  }
+
+  const num = text.match(/\d+/);
+  return num ? parseInt(num[0]) : 1;
+}
+
+// =====================
+// TOTAL (STABLE)
+// =====================
+function calcTotal(order) {
+  let total = 0;
+
+  order.items.forEach(i => {
+    total += Number(i.price) * Number(i.qty);
+
+    i.modifiers.forEach(m => {
+      total += Number(m.price || 0);
+    });
+  });
+
+  return total;
 }
 
 // =====================
@@ -161,48 +203,36 @@ function render() {
     currentOrder.items.map(i =>
       `<div class="order-item">
         ${i.qty}x ${i.name} (${fmt(i.price)}€)
-        <br><small>${i.modifiers.map(m => m.name).join(", ")}</small>
       </div>`
     ).join("");
 }
 
 // =====================
-// TOTAL
-// =====================
-function calcTotal(order) {
-  let total = 0;
-
-  order.items.forEach(i => {
-    total += Number(i.price) * Number(i.qty);
-
-    i.modifiers.forEach(m => {
-      total += Number(m.price || 0);
-    });
-  });
-
-  return total;
-}
-
-// =====================
-// CLOSE ORDER
+// CLOSE ORDER (IMPORTANT FIX = SNAPSHOT)
 // =====================
 function closeOrder() {
 
   if (currentOrder.items.length === 0) return;
 
+  // SNAPSHOT COPY (KRITISCH!)
+  const snapshot = JSON.parse(JSON.stringify(currentOrder));
+
+  const total = calcTotal(snapshot);
+
   let bon = `BON #${bonCounter}\n-----------------\n`;
 
-  currentOrder.items.forEach(i => {
+  snapshot.items.forEach(i => {
     bon += `${i.qty}x ${i.name} (${fmt(i.price)}€)\n`;
 
     if (i.modifiers.length) {
-      bon += ` + ${i.modifiers.map(m => `${m.name} (${fmt(m.price)}€)`).join(", ")}\n`;
+      bon += `  + ${i.modifiers.map(m => `${m.name} (${fmt(m.price)})`).join(", ")}\n`;
     }
   });
 
-  bon += `-----------------\nTOTAL: ${fmt(calcTotal(currentOrder))}€\n`;
+  bon += `-----------------\nTOTAL: ${fmt(total)}€\n`;
 
   bons.push(bon);
+
   bonCounter++;
 
   currentOrder = { items: [] };
@@ -228,19 +258,23 @@ recognition.onresult = (e) => {
     return;
   }
 
+  const qty = extractQty(text);
+
   const article = articles.find(a =>
-    text.includes(a.name.toLowerCase())
+    text.includes(a.name.toLowerCase()) ||
+    (a.voice && text.includes(a.voice))
   );
 
   const mod = modifiers.find(m =>
-    text.includes(m.name.toLowerCase())
+    text.includes(m.name.toLowerCase()) ||
+    (m.voice && text.includes(m.voice))
   );
 
   if (article) {
     currentOrder.items.push({
       name: article.name,
       price: article.price,
-      qty: 1,
+      qty: qty,
       modifiers: []
     });
   }
