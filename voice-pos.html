@@ -97,42 +97,53 @@ button {
 </div>
 
 <script>
-const API_KEY = " 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";
+// =========================
+// CONFIG
+// =========================
+const API_KEY = "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";
 
-// ?? Google Sheets CSV URLs
-const SHEET_ID="1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
-const ARTICLE_URL=`https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
-const MODIFIER_URL=`https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
+const SHEET_ID = "1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
+const ARTICLE_URL = `https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
+const MODIFIER_URL = `https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
 
+// =========================
+// STATE
+// =========================
 let articles = [];
 let modifiers = [];
 let orders = [];
 let bons = [];
 
+// =========================
+// DOM
+// =========================
 const articlesEl = document.getElementById("articles");
 const modifiersEl = document.getElementById("modifiers");
 const ordersEl = document.getElementById("orders");
 const bonsEl = document.getElementById("bons");
 
-// ?? CSV Loader
-async function loadCSV(url) {
+// =========================
+// GOOGLE SHEETS LOAD
+// =========================
+async function loadSheet(url) {
   const res = await fetch(url);
-  const text = await res.text();
-
-  return text
-    .split("\n")
-    .map(r => r.split(",")[0])
-    .filter(Boolean);
+  return await res.json();
 }
 
-// ?? Daten laden
 async function loadData() {
-  articles = await loadCSV(ARTICLES_URL);
-  modifiers = await loadCSV(MODIFIERS_URL);
+  const articleData = await loadSheet(ARTICLE_URL);
+  const modifierData = await loadSheet(MODIFIER_URL);
+
+  // erwartet: [{name: "..."}] oder ähnliche Struktur
+  articles = articleData.map(a => a.name || Object.values(a)[0]);
+  modifiers = modifierData.map(m => m.name || Object.values(m)[0]);
+
   render();
 }
 
-// ??? UI Render (richtige Reihenfolge)
+// =========================
+// RENDER
+// =========================
 function render() {
   articlesEl.innerHTML = articles
     .map((a, i) => `<div class="item"><span class="num">${i+1}</span>${a}</div>`)
@@ -151,7 +162,9 @@ function render() {
     .join("");
 }
 
-// ?? Speech Recognition
+// =========================
+// VOICE
+// =========================
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const recognition = new SpeechRecognition();
 
@@ -163,7 +176,9 @@ recognition.onresult = async (e) => {
   await sendToAI(text);
 };
 
-// ?? OpenAI
+// =========================
+// OPENAI
+// =========================
 async function sendToAI(text) {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -218,11 +233,15 @@ Gib NUR JSON zurück:
   }
 }
 
-// ??? Buttons
+// =========================
+// CONTROLS
+// =========================
 document.getElementById("start").onclick = () => recognition.start();
 document.getElementById("stop").onclick = () => recognition.stop();
 
-// ?? Start
+// =========================
+// INIT
+// =========================
 loadData();
 </script>
 
