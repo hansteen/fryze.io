@@ -2,75 +2,131 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<title>Voice POS Full System</title>
+<title>POS Kassenlayout (Voice)</title>
 
 <style>
 body {
-  font-family: Arial;
-  background: #fff;
-  color: #111;
-  padding: 20px;
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f2f2f2;
 }
 
-.container {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
+header {
+  background: #111;
+  color: white;
+  padding: 10px 15px;
+  display: flex;
+  align-items: center;
   gap: 10px;
 }
 
-.box {
-  border: 1px solid #ddd;
+button {
+  padding: 10px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#start { background: #28a745; color: white; }
+#stop { background: #dc3545; color: white; }
+#finish { background: #ff9800; color: white; }
+
+.container {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  height: calc(100vh - 60px);
+}
+
+/* LEFT: ARTICLE LIST */
+.panel {
+  background: white;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;
   padding: 10px;
-  min-height: 300px;
+}
+
+.panel h2 {
+  margin-top: 0;
 }
 
 .item {
-  padding: 4px;
+  padding: 8px;
   border-bottom: 1px solid #eee;
   font-size: 14px;
 }
 
-.bon {
-  white-space: pre-wrap;
-  background: #f7f7f7;
-  padding: 8px;
-  margin-bottom: 8px;
-  border-left: 3px solid #ffcc00;
+/* CENTER: CURRENT ORDER */
+.center {
+  background: #fafafa;
+  padding: 10px;
+  border-right: 1px solid #ddd;
 }
 
-button {
-  padding: 10px;
-  margin-right: 10px;
+.order-item {
+  padding: 8px;
+  background: white;
+  margin-bottom: 6px;
+  border-left: 4px solid #2196f3;
 }
+
+/* RIGHT: BON HISTORY */
+.right {
+  background: white;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.bon {
+  white-space: pre-wrap;
+  background: #fff8dc;
+  padding: 10px;
+  margin-bottom: 10px;
+  border-left: 4px solid #ffcc00;
+}
+
+/* LOG */
+#log {
+  font-size: 12px;
+  color: #444;
+  margin-top: 10px;
+  height: 120px;
+  overflow-y: auto;
+  background: #eee;
+  padding: 6px;
+}
+
 </style>
 </head>
 
 <body>
 
-<h1>Voice POS Full System</h1>
-
-<button id="start">Start</button>
-<button id="stop">Stop</button>
+<header>
+  ?? Voice POS Kasse
+  <button id="start">Start Voice</button>
+  <button id="stop">Stop</button>
+  <button id="finish">Bestellung abschließen</button>
+</header>
 
 <div class="container">
 
-  <div class="box">
-    <h3>Artikel</h3>
+  <!-- LINKS: ARTIKEL -->
+  <div class="panel">
+    <h2>Artikel</h2>
     <div id="articles"></div>
+
+    <h2>Log</h2>
+    <div id="log"></div>
   </div>
 
-  <div class="box">
-    <h3>Modifier</h3>
-    <div id="modifiers"></div>
+  <!-- MITTE: AKTUELLE BESTELLUNG -->
+  <div class="center">
+    <h2>Aktuelle Bestellung</h2>
+    <div id="current"></div>
   </div>
 
-  <div class="box">
-    <h3>Bestellung</h3>
-    <div id="orders"></div>
-  </div>
-
-  <div class="box">
-    <h3>Bons</h3>
+  <!-- RECHTS: BONS -->
+  <div class="right">
+    <h2>Bons</h2>
     <div id="bons"></div>
   </div>
 
@@ -79,116 +135,90 @@ button {
 <script>
 
 // =====================
-// CONFIG
+// DATA (Google Sheets)
 // =====================
 const SHEET_ID = "1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
-
 const ARTICLE_URL = `https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
-const MODIFIER_URL = `https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
 
-// =====================
-// STATE
-// =====================
 let articles = [];
-let modifiers = [];
+let currentOrder = { items: [] };
 let orders = [];
 let bons = [];
 
 // =====================
-// LOAD
+// LOG
 // =====================
-async function loadData() {
+function log(msg) {
+  document.getElementById("log").innerHTML += msg + "<br>";
+}
 
-  const a = await fetch(ARTICLE_URL).then(r => r.json());
-  const m = await fetch(MODIFIER_URL).then(r => r.json());
+// =====================
+// LOAD ARTICLES
+// =====================
+async function loadArticles() {
+  const res = await fetch(ARTICLE_URL);
+  const data = await res.json();
 
-  articles = a.map(x => ({
-    id: x.Nummer,
-    name: x.Name,
-    price: x.Preis,
-    voice: x.VoiceAlias
-  }));
-
-  modifiers = m.map(x => ({
-    id: x.Nummer,
-    name: x.Name,
-    price: x.Preis,
-    voice: x.VoiceAlias
+  articles = data.map(a => ({
+    id: a.Nummer,
+    name: a.Name,
+    price: a.Preis,
+    voice: a.VoiceAlias
   }));
 
   render();
 }
 
 // =====================
-// RENDER
+// RENDER UI
 // =====================
 function render() {
 
+  // ARTICLES
   document.getElementById("articles").innerHTML =
     articles.map(a =>
-      `<div class="item">${a.id} - ${a.name} (${a.price}€)</div>`
+      `<div class="item">${a.id} - ${a.name} (${a.price} €)</div>`
     ).join("");
 
-  document.getElementById("modifiers").innerHTML =
-    modifiers.map(m =>
-      `<div class="item">${m.id} - ${m.name}</div>`
+  // CURRENT ORDER
+  document.getElementById("current").innerHTML =
+    currentOrder.items.map(i =>
+      `<div class="order-item">1x ${i.name}</div>`
     ).join("");
 
-  document.getElementById("orders").innerHTML =
-    orders.map(o =>
-      `<div class="item">
-        ${o.qty}x ${o.name}<br>
-        ${o.modifiers.join(", ")}
-      </div>`
-    ).join("");
-
+  // BONS
   document.getElementById("bons").innerHTML =
     bons.map(b => `<div class="bon">${b}</div>`).join("");
 }
 
 // =====================
-// VOICE
+// VOICE ENGINE
 // =====================
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const recognition = new SpeechRecognition();
 
 recognition.lang = "de-DE";
 recognition.continuous = true;
+recognition.interimResults = false;
+
+recognition.onstart = () => log("?? Voice gestartet");
+
+recognition.onerror = (e) => log("? Voice Fehler: " + e.error);
 
 recognition.onresult = (e) => {
 
   const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
+  log("?? " + text);
 
-  const article = articles.find(a =>
+  const match = articles.find(a =>
     text.includes(a.name.toLowerCase()) ||
-    text.includes((a.voice || "").toLowerCase())
+    (a.voice && text.includes(a.voice.toLowerCase()))
   );
 
-  const mod = modifiers.find(m =>
-    text.includes(m.name.toLowerCase()) ||
-    text.includes((m.voice || "").toLowerCase())
-  );
-
-  if (article) {
-    const order = {
-      qty: 1,
-      name: article.name,
-      modifiers: []
-    };
-
-    if (mod) order.modifiers.push(mod.name);
-
-    orders.push(order);
-
-    bons.push(
-`BON
-${article.name}
-Preis: ${article.price}€
-${order.modifiers.join(", ")}
-`);
+  if (match) {
+    currentOrder.items.push(match);
+    render();
   }
-
-  render();
 };
 
 // =====================
@@ -197,10 +227,29 @@ ${order.modifiers.join(", ")}
 document.getElementById("start").onclick = () => recognition.start();
 document.getElementById("stop").onclick = () => recognition.stop();
 
-// =====================
+// ORDER FINALIZE (WICHTIG!)
+document.getElementById("finish").onclick = () => {
+
+  if (currentOrder.items.length === 0) return;
+
+  let bon = "BON\n-----------------\n";
+
+  currentOrder.items.forEach(i => {
+    bon += `1x ${i.name} - ${i.price}€\n`;
+  });
+
+  bon += "-----------------\n";
+
+  bons.push(bon);
+  orders.push(currentOrder);
+
+  currentOrder = { items: [] };
+
+  render();
+};
+
 // INIT
-// =====================
-loadData();
+loadArticles();
 
 </script>
 
