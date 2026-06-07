@@ -146,15 +146,40 @@ async function loadData() {
     voice: x.VoiceAlias
   }));
 
-  modifiers = m.map(x => ({
-    id: x.Nummer,
-    name: x.Name,
-    price: parseFloat(x.Preis),
-    voice: x.VoiceAlias
-  }));
+modifiers = m.map(x => ({
+  id: x.Nummer,
+  name: x.Name,
+  price: Number(x.Preis) || 0,
+  voice: x.VoiceAlias
+}));
 
   render();
 }
+
+
+// ============= Preise richtig formatieren
+function formatPrice(p) {
+  return Number(p).toFixed(2);
+}
+
+
+
+
+function calcTotal(order) {
+  let total = 0;
+
+  order.items.forEach(i => {
+    total += Number(i.price) * Number(i.qty);
+
+    i.modifiers.forEach(m => {
+      total += Number(m.price || 0);
+    });
+  });
+
+  return total.toFixed(2);
+}
+
+
 
 // =====================
 // RENDER
