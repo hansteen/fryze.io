@@ -115,8 +115,19 @@ recognition.onstart = () => log("?? Voice gestartet");
 recognition.onerror = (e) => log("? Voice Fehler: " + e.error);
 
 recognition.onresult = (e) => {
-  const text = e.results[e.results.length - 1][0].transcript;
+  const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
+
   log("?? " + text);
+
+  const match = articles.find(a =>
+    text.includes(a.name.toLowerCase())
+  );
+
+  if (match) {
+    log(`?? ORDER: ${match.name} - ${match.preis} €`);
+  } else {
+    log("?? kein Artikel erkannt");
+  }
 };
 
 // =====================
