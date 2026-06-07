@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<title>Voice POS Stable Reset</title>
+<title>Voice POS Full System</title>
 
 <style>
 body {
@@ -12,38 +12,69 @@ body {
   padding: 20px;
 }
 
-button {
-  padding: 10px 15px;
-  margin-right: 10px;
+.container {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 10px;
 }
 
-#log {
-  margin-top: 15px;
-  background: #f5f5f5;
+.box {
+  border: 1px solid #ddd;
   padding: 10px;
-  min-height: 150px;
-  white-space: pre-wrap;
+  min-height: 300px;
 }
 
 .item {
-  padding: 5px;
-  border-bottom: 1px solid #ddd;
+  padding: 4px;
+  border-bottom: 1px solid #eee;
+  font-size: 14px;
+}
+
+.bon {
+  white-space: pre-wrap;
+  background: #f7f7f7;
+  padding: 8px;
+  margin-bottom: 8px;
+  border-left: 3px solid #ffcc00;
+}
+
+button {
+  padding: 10px;
+  margin-right: 10px;
 }
 </style>
 </head>
 
 <body>
 
-<h1>Voice POS (Stable Reset)</h1>
+<h1>Voice POS Full System</h1>
 
 <button id="start">Start</button>
 <button id="stop">Stop</button>
 
-<h3>Artikel</h3>
-<div id="articles"></div>
+<div class="container">
 
-<h3>Log</h3>
-<div id="log"></div>
+  <div class="box">
+    <h3>Artikel</h3>
+    <div id="articles"></div>
+  </div>
+
+  <div class="box">
+    <h3>Modifier</h3>
+    <div id="modifiers"></div>
+  </div>
+
+  <div class="box">
+    <h3>Bestellung</h3>
+    <div id="orders"></div>
+  </div>
+
+  <div class="box">
+    <h3>Bons</h3>
+    <div id="bons"></div>
+  </div>
+
+</div>
 
 <script>
 
@@ -51,106 +82,125 @@ button {
 // CONFIG
 // =====================
 const SHEET_ID = "1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
+
 const ARTICLE_URL = `https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
+const MODIFIER_URL = `https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
 
 // =====================
 // STATE
 // =====================
 let articles = [];
+let modifiers = [];
+let orders = [];
+let bons = [];
 
 // =====================
-// DOM
+// LOAD
 // =====================
-const logEl = document.getElementById("log");
-const articlesEl = document.getElementById("articles");
+async function loadData() {
 
-function log(msg) {
-  logEl.innerText += msg + "\n";
+  const a = await fetch(ARTICLE_URL).then(r => r.json());
+  const m = await fetch(MODIFIER_URL).then(r => r.json());
+
+  articles = a.map(x => ({
+    id: x.Nummer,
+    name: x.Name,
+    price: x.Preis,
+    voice: x.VoiceAlias
+  }));
+
+  modifiers = m.map(x => ({
+    id: x.Nummer,
+    name: x.Name,
+    price: x.Preis,
+    voice: x.VoiceAlias
+  }));
+
+  render();
 }
 
 // =====================
-// LOAD ARTICLES (SAFE)
-// =====================
-async function loadArticles() {
-  try {
-    const res = await fetch(ARTICLE_URL);
-    const data = await res.json();
-
-    articles = data.map(a => ({
-      nummer: a.Nummer,
-      name: a.Name,
-      preis: a.Preis
-    }));
-
-    render();
-
-  } catch (e) {
-    log("? Sheet Fehler: " + e.message);
-  }
-}
-
-// =====================
-// RENDER (FIXED PRICE DISPLAY)
+// RENDER
 // =====================
 function render() {
-  articlesEl.innerHTML = articles.map(a =>
-    `<div class="item">
-      ${a.nummer} - ${a.name} (${a.preis} €)
-    </div>`
-  ).join("");
+
+  document.getElementById("articles").innerHTML =
+    articles.map(a =>
+      `<div class="item">${a.id} - ${a.name} (${a.price}€)</div>`
+    ).join("");
+
+  document.getElementById("modifiers").innerHTML =
+    modifiers.map(m =>
+      `<div class="item">${m.id} - ${m.name}</div>`
+    ).join("");
+
+  document.getElementById("orders").innerHTML =
+    orders.map(o =>
+      `<div class="item">
+        ${o.qty}x ${o.name}<br>
+        ${o.modifiers.join(", ")}
+      </div>`
+    ).join("");
+
+  document.getElementById("bons").innerHTML =
+    bons.map(b => `<div class="bon">${b}</div>`).join("");
 }
 
 // =====================
-// VOICE (MINIMAL STABLE)
+// VOICE
 // =====================
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
 const recognition = new SpeechRecognition();
+
 recognition.lang = "de-DE";
 recognition.continuous = true;
-recognition.interimResults = false;
-
-recognition.onstart = () => log("?? Voice gestartet");
-
-recognition.onerror = (e) => log("? Voice Fehler: " + e.error);
 
 recognition.onresult = (e) => {
+
   const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
 
-  log("?? " + text);
-
-  const match = articles.find(a =>
-    text.includes(a.name.toLowerCase())
+  const article = articles.find(a =>
+    text.includes(a.name.toLowerCase()) ||
+    text.includes((a.voice || "").toLowerCase())
   );
 
-  if (match) {
-    log(`?? ORDER: ${match.name} - ${match.preis} €`);
-  } else {
-    log("?? kein Artikel erkannt");
+  const mod = modifiers.find(m =>
+    text.includes(m.name.toLowerCase()) ||
+    text.includes((m.voice || "").toLowerCase())
+  );
+
+  if (article) {
+    const order = {
+      qty: 1,
+      name: article.name,
+      modifiers: []
+    };
+
+    if (mod) order.modifiers.push(mod.name);
+
+    orders.push(order);
+
+    bons.push(
+`BON
+${article.name}
+Preis: ${article.price}€
+${order.modifiers.join(", ")}
+`);
   }
+
+  render();
 };
 
 // =====================
-// START/STOP (IMPORTANT FIX)
+// BUTTONS
 // =====================
-function startVoice() {
-  try {
-    recognition.start();
-  } catch (e) {
-    log("Start Error: " + e.message);
-  }
-}
-
-// =====================
-// BIND BUTTONS
-// =====================
-document.getElementById("start").onclick = startVoice;
+document.getElementById("start").onclick = () => recognition.start();
 document.getElementById("stop").onclick = () => recognition.stop();
 
 // =====================
 // INIT
 // =====================
-loadArticles();
+loadData();
 
 </script>
 
