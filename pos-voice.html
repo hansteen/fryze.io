@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<title>Voice POS - Restaurant Engine</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #ffffff;
+  color: #111;
+  margin: 0;
+  padding: 20px;
+}
+
+h1 { margin-bottom: 10px; }
+
+.container {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 15px;
+}
+
+.box {
+  background: #f7f7f7;
+  border: 1px solid #ddd;
+  padding: 15px;
+  border-radius: 10px;
+  min-height: 340px;
+}
+
+.item {
+  padding: 6px;
+  border-bottom: 1px solid #ddd;
+  font-size: 14px;
+}
+
+.num {
+  font-weight: bold;
+  margin-right: 6px;
+  color: #666;
+}
+
+.state-open { color: #1e88e5; }
+.state-modified { color: #f9a825; }
+.state-sent { color: #43a047; }
+
+.bon {
+  background: white;
+  border: 1px solid #ddd;
+  border-left: 4px solid #ffcc00;
+  padding: 10px;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+}
+
+button {
+  padding: 10px;
+  margin-right: 10px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+#start { background: #28a745; color: white; }
+#stop { background: #dc3545; color: white; }
+</style>
+</head>
+
+<body>
+
+<h1>?? Voice POS - Restaurant Engine</h1>
+
+<button id="start">Start Voice</button>
+<button id="stop">Stop</button>
+
+<div class="container">
+
+  <div class="box">
+    <h2>?? Artikel</h2>
+    <div id="articles"></div>
+  </div>
+
+  <div class="box">
+    <h2>?? Modifier</h2>
+    <div id="modifiers"></div>
+  </div>
+
+  <div class="box">
+    <h2>?? Orders (State Machine)</h2>
+    <div id="orders"></div>
+  </div>
+
+  <div class="box">
+    <h2>?? Bons (Küche)</h2>
+    <div id="bons"></div>
+  </div>
+
+</div>
+
+<script>
+
+// =========================
+// CONFIG
+// =========================
+const API_KEY = "DEIN_OPENAI_API_KEY_HIER";
+
+const SHEET_ID = "1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
+const ARTICLE_URL = `https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
+const MODIFIER_URL = `https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
+
+// =========================
+// STATE
+// =========================
+let articles = [];
+let modifiers = [];
+let orders = [];
+let bons = [];
+
+// =========================
+// STATE MACHINE
+// =========================
+const STATE = {
+  OPEN: "OPEN",
+  MODIFIED: "MODIFIED",
+  SENT: "SENT_TO_KITCHEN",
+  CLOSED: "CLOSED"
+};
+
+// =========================
+// LOAD DATA
+// =========================
+async function loadSheet(url) {
+  const res = await fetch(url);
+  return await res.json();
+}
+
+async function loadData() {
+  const a = await loadSheet(ARTICLE_URL);
+  const m = await loadSheet(MODIFIER_URL);
+
+  articles = a.map(x => ({
+    id: x.Nummer,
+    name: x.Name,
+    price: x.Preis,
+    voice: x.VoiceAlias,
+    category: x.Kategorie
+  }));
+
+  modifiers = m.map(x => ({
+    id: x.Nummer,
+    name: x.Name,
+    price: x.Preis,
+    voice: x.VoiceAlias,
+    category: x.Kategorie
+  }));
+
+  render();
+}
+
+// =========================
+// STATE ENGINE
+// =========================
+function createOrder(item) {
+  return {
+    id: Date.now(),
+    state: STATE.OPEN,
+    items: [
+      {
+        name: item.name,
+        qty: 1,
+        modifiers: []
+      }
+    ]
+  };
+}
+
+function addModifierToOrder(order, mod) {
+  order.items[0].modifiers.push(mod.name);
+  order.state = STATE.MODIFIED;
+}
+
+function sendToKitchen(order) {
+  order.state = STATE.SENT;
+  bons.push(formatBon(order));
+}
+
+// =========================
+// BON FORMAT
+// =========================
+function formatBon(order) {
+  let text = `ORDER #${order.id}\nSTATE: ${order.state}\n\n`;
+
+  order.items.forEach(i => {
+    text += `${i.qty}x ${i.name}\n`;
+
+    if (i.modifiers.length > 0) {
+      text += `  MOD: ${i.modifiers.join(", ")}\n`;
+    }
+  });
+
+  return text;
+}
+
+// =========================
+// RENDER
+// =========================
+function render() {
+
+  // ?? Artikel
+  document.getElementById("articles").innerHTML =
+    articles.map(a =>
+      `<div class="item"><span class="num">${a.id}</span>${a.name}</div>`
+    ).join("");
+
+  // ?? Modifier
+  document.getElementById("modifiers").innerHTML =
+    modifiers.map(m =>
+      `<div class="item"><span class="num">${m.id}</span>${m.name}</div>`
+    ).join("");
+
+  // ?? Orders
+  document.getElementById("orders").innerHTML =
+    orders.map(o => {
+      let cls = o.state === STATE.OPEN ? "state-open" :
+                o.state === STATE.MODIFIED ? "state-modified" :
+                "state-sent";
+
+      return `
+        <div class="item ${cls}">
+          ?? Order ${o.id}<br>
+          ${o.items[0].qty}x ${o.items[0].name}<br>
+          <small>${o.state}</small>
+        </div>
+      `;
+    }).join("");
+
+  // ?? Bons
+  document.getElementById("bons").innerHTML =
+    bons.map(b => `<div class="bon">${b}</div>`).join("");
+}
+
+// =========================
+// VOICE ENGINE (simplified mapping)
+// =========================
+function findArticleByVoice(text) {
+  return articles.find(a =>
+    a.voice?.toLowerCase().includes(text.toLowerCase()) ||
+    a.name.toLowerCase().includes(text.toLowerCase())
+  );
+}
+
+function findModifierByVoice(text) {
+  return modifiers.find(m =>
+    m.voice?.toLowerCase().includes(text.toLowerCase()) ||
+    m.name.toLowerCase().includes(text.toLowerCase())
+  );
+}
+
+// =========================
+// VOICE INPUT
+// =========================
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = new SpeechRecognition();
+
+recognition.lang = "de-DE";
+recognition.continuous = true;
+
+recognition.onresult = (e) => {
+  const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
+
+  console.log("VOICE:", text);
+
+  let article = findArticleByVoice(text);
+
+  if (article) {
+    let order = createOrder(article);
+    orders.push(order);
+  }
+
+  let mod = findModifierByVoice(text);
+
+  if (mod && orders.length > 0) {
+    addModifierToOrder(orders[orders.length - 1], mod);
+  }
+
+  if (text.includes("küche") || text.includes("bon")) {
+    if (orders.length > 0) {
+      sendToKitchen(orders[orders.length - 1]);
+    }
+  }
+
+  render();
+};
+
+// =========================
+// CONTROLS
+// =========================
+document.getElementById("start").onclick = () => recognition.start();
+document.getElementById("stop").onclick = () => recognition.stop();
+
+// =========================
+// INIT
+// =========================
+loadData();
+
+</script>
+
+</body>
+</html>
