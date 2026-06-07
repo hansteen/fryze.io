@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<title>Voice POS System</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #ffffff;
+  color: #111;
+  margin: 0;
+  padding: 20px;
+}
+
+h1, h2 {
+  color: #111;
+}
+
+.container {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 15px;
+}
+
+.box {
+  background: #f7f7f7;
+  border: 1px solid #ddd;
+  padding: 15px;
+  border-radius: 10px;
+  min-height: 320px;
+}
+
+.item {
+  padding: 6px;
+  border-bottom: 1px solid #ddd;
+  font-size: 14px;
+}
+
+.num {
+  font-weight: bold;
+  margin-right: 6px;
+  color: #666;
+}
+
+button {
+  padding: 10px;
+  margin-right: 10px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+#start { background: #28a745; color: white; }
+#stop { background: #dc3545; color: white; }
+
+.bon {
+  background: white;
+  border: 1px solid #ddd;
+  border-left: 4px solid #ffcc00;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>?? Voice POS System</h1>
+
+<button id="start">Start Voice</button>
+<button id="stop">Stop</button>
+
+<div class="container">
+
+  <div class="box">
+    <h2>?? Artikel</h2>
+    <div id="articles"></div>
+  </div>
+
+  <div class="box">
+    <h2>?? Modifier</h2>
+    <div id="modifiers"></div>
+  </div>
+
+  <div class="box">
+    <h2>?? Bestellung</h2>
+    <div id="orders"></div>
+  </div>
+
+  <div class="box">
+    <h2>?? Bons</h2>
+    <div id="bons"></div>
+  </div>
+
+</div>
+
+<script>
+
+// =========================
+// CONFIG
+// =========================
+const API_KEY = "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";
+
+const SHEET_ID = "1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
+const ARTICLE_URL = `https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
+const MODIFIER_URL = `https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
+
+// =========================
+// STATE
+// =========================
+let articles = [];
+let modifiers = [];
+let orders = [];
+let bons = [];
+
+// =========================
+// DOM
+// =========================
+const articlesEl = document.getElementById("articles");
+const modifiersEl = document.getElementById("modifiers");
+const ordersEl = document.getElementById("orders");
+const bonsEl = document.getElementById("bons");
+
+// =========================
+// LOAD GOOGLE SHEETS
+// =========================
+async function loadSheet(url) {
+  const res = await fetch(url);
+  return await res.json();
+}
+
+async function loadData() {
+  const articleData = await loadSheet(ARTICLE_URL);
+  const modifierData = await loadSheet(MODIFIER_URL);
+
+  articles = articleData.map(a => ({
+    nummer: a.Nummer,
+    kategorie: a.Kategorie,
+    name: a.Name,
+    preis: a.Preis,
+    voice: a.VoiceAlias,
+    aktiv: a.Aktiv
+  })).filter(a => a.aktiv == 1);
+
+  modifiers = modifierData.map(m => ({
+    nummer: m.Nummer,
+    kategorie: m.Kategorie,
+    name: m.Name,
+    preis: m.Preis,
+    voice: m.VoiceAlias
+  }));
+
+  render();
+}
+
+// =========================
+// RENDER
+// =========================
+function render() {
+
+  // ?? Artikel
+  articlesEl.innerHTML = articles
+    .map(a =>
+      `<div class="item">
+        <span class="num">${a.nummer}</span>
+        ${a.name} <small>(${a.preis}€)</small>
+      </div>`
+    )
+    .join("");
+
+  // ?? Modifier
+  modifiersEl.innerHTML = modifiers
+    .map(m =>
+      `<div class="item">
+        <span class="num">${m.nummer}</span>
+        ${m.name} <small>(${m.preis}€)</small>
+      </div>`
+    )
+    .join("");
+
+  // ?? Bestellung
+  ordersEl.innerHTML = orders
+    .map(o =>
+      `<div class="item">?? ${o.qty}x ${o.name}</div>`
+    )
+    .join("");
+
+  // ?? Bons
+  bonsEl.innerHTML = bons
+    .map(b => `<div class="bon">${b}</div>`)
+    .join("");
+}
+
+// =========================
+// VOICE RECOGNITION
+// =========================
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = new SpeechRecognition();
+
+recognition.lang = "de-DE";
+recognition.continuous = true;
+recognition.interimResults = false;
+
+recognition.onresult = async (e) => {
+  const text = e.results[e.results.length - 1][0].transcript;
+  await sendToAI(text);
+};
+
+// =========================
+// OPENAI CALL
+// =========================
+async function sendToAI(text) {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + API_KEY
+    },
+    body: JSON.stringify({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content: `
+Du bist ein Restaurant POS System.
+
+Du bekommst Sprachbefehle.
+
+Nutze Artikel und Modifier aus einem POS.
+
+Gib NUR JSON zurück:
+
+{
+  "order": {
+    "qty": 1,
+    "name": "",
+    "items": [
+      {
+        "name": "",
+        "modifiers": []
+      }
+    ]
+  },
+  "bon": ""
+}
+          `
+        },
+        { role: "user", content: text }
+      ],
+      temperature: 0.2
+    })
+  });
+
+  const data = await res.json();
+  const msg = data.choices[0].message.content;
+
+  try {
+    const parsed = JSON.parse(msg);
+
+    if (parsed.order) orders.push(parsed.order);
+    if (parsed.bon) bons.push(parsed.bon);
+
+    render();
+
+  } catch (err) {
+    console.log("JSON Fehler:", msg);
+  }
+}
+
+// =========================
+// CONTROLS
+// =========================
+document.getElementById("start").onclick = () => recognition.start();
+document.getElementById("stop").onclick = () => recognition.stop();
+
+// =========================
+// INIT
+// =========================
+loadData();
+
+</script>
+
+</body>
+</html>
