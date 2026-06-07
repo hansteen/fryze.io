@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<title>Voice POS Stable Reset</title>
+
+<style>
+body {
+  font-family: Arial;
+  background: #fff;
+  color: #111;
+  padding: 20px;
+}
+
+button {
+  padding: 10px 15px;
+  margin-right: 10px;
+}
+
+#log {
+  margin-top: 15px;
+  background: #f5f5f5;
+  padding: 10px;
+  min-height: 150px;
+  white-space: pre-wrap;
+}
+
+.item {
+  padding: 5px;
+  border-bottom: 1px solid #ddd;
+}
+</style>
+</head>
+
+<body>
+
+<h1>Voice POS (Stable Reset)</h1>
+
+<button id="start">Start</button>
+<button id="stop">Stop</button>
+
+<h3>Artikel</h3>
+<div id="articles"></div>
+
+<h3>Log</h3>
+<div id="log"></div>
+
+<script>
+
+// =====================
+// CONFIG
+// =====================
+const SHEET_ID = "1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
+const ARTICLE_URL = `https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
+
+// =====================
+// STATE
+// =====================
+let articles = [];
+
+// =====================
+// DOM
+// =====================
+const logEl = document.getElementById("log");
+const articlesEl = document.getElementById("articles");
+
+function log(msg) {
+  logEl.innerText += msg + "\n";
+}
+
+// =====================
+// LOAD ARTICLES (SAFE)
+// =====================
+async function loadArticles() {
+  try {
+    const res = await fetch(ARTICLE_URL);
+    const data = await res.json();
+
+    articles = data.map(a => ({
+      nummer: a.Nummer,
+      name: a.Name,
+      preis: a.Preis
+    }));
+
+    render();
+
+  } catch (e) {
+    log("? Sheet Fehler: " + e.message);
+  }
+}
+
+// =====================
+// RENDER (FIXED PRICE DISPLAY)
+// =====================
+function render() {
+  articlesEl.innerHTML = articles.map(a =>
+    `<div class="item">
+      ${a.nummer} - ${a.name} (${a.preis} €)
+    </div>`
+  ).join("");
+}
+
+// =====================
+// VOICE (MINIMAL STABLE)
+// =====================
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+const recognition = new SpeechRecognition();
+recognition.lang = "de-DE";
+recognition.continuous = true;
+recognition.interimResults = false;
+
+recognition.onstart = () => log("?? Voice gestartet");
+
+recognition.onerror = (e) => log("? Voice Fehler: " + e.error);
+
+recognition.onresult = (e) => {
+  const text = e.results[e.results.length - 1][0].transcript;
+  log("?? " + text);
+};
+
+// =====================
+// START/STOP (IMPORTANT FIX)
+// =====================
+function startVoice() {
+  try {
+    recognition.start();
+  } catch (e) {
+    log("Start Error: " + e.message);
+  }
+}
+
+// =====================
+// BIND BUTTONS
+// =====================
+document.getElementById("start").onclick = startVoice;
+document.getElementById("stop").onclick = () => recognition.stop();
+
+// =====================
+// INIT
+// =====================
+loadArticles();
+
+</script>
+
+</body>
+</html>
