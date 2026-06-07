@@ -2,163 +2,108 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<title>Voice POS System</title>
+<title>POS Fix Total</title>
 
 <style>
-body {
-  margin: 0;
-  font-family: Arial;
-  background: #f4f4f4;
-}
+body { font-family: Arial; margin: 0; background:#f4f4f4; }
+header { background:#111; color:#fff; padding:10px; }
+button { padding:8px; margin-right:5px; }
 
-header {
-  background: #111;
-  color: #fff;
-  padding: 10px;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
+.container { display:grid; grid-template-columns:1fr 1fr 1fr; height:90vh; }
 
-button {
-  padding: 10px;
-  border: none;
-  cursor: pointer;
-  border-radius: 6px;
-}
+.panel { background:#fff; padding:10px; overflow:auto; border-right:1px solid #ddd; }
+.center { background:#fafafa; padding:10px; border-right:1px solid #ddd; }
+.right { background:#fff; padding:10px; }
 
-#start { background: #28a745; color: white; }
-#stop { background: #dc3545; color: white; }
-#finish { background: #ff9800; color: white; }
+.item { padding:5px; border-bottom:1px solid #eee; }
+.order-item { padding:5px; border-left:3px solid blue; margin-bottom:5px; }
 
-.container {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  height: calc(100vh - 60px);
-}
-
-.panel {
-  background: white;
-  padding: 10px;
-  overflow-y: auto;
-  border-right: 1px solid #ddd;
-}
-
-.center {
-  background: #fafafa;
-  padding: 10px;
-  border-right: 1px solid #ddd;
-}
-
-.right {
-  background: white;
-  padding: 10px;
-}
-
-.item, .mod {
-  padding: 6px;
-  border-bottom: 1px solid #eee;
-}
-
-.order-item {
-  padding: 6px;
-  background: white;
-  margin-bottom: 6px;
-  border-left: 4px solid #2196f3;
-}
-
-.bon {
-  white-space: pre-wrap;
-  background: #fff8dc;
-  padding: 10px;
-  margin-bottom: 10px;
-  border-left: 4px solid #ffcc00;
-}
+.bon { background:#fff8dc; padding:10px; margin-bottom:10px; white-space:pre-wrap; border-left:4px solid gold; }
 </style>
 </head>
 
 <body>
 
 <header>
-  ?? Voice POS
-  <button id="start">Start</button>
-  <button id="stop">Stop</button>
-  <button id="finish">Bestellung abschließen</button>
+?? POS Fix
+<button id="start">Start</button>
+<button id="stop">Stop</button>
+<button id="finish">Bestellung abschließen</button>
 </header>
 
 <div class="container">
 
-  <div class="panel">
-    <h3>Artikel</h3>
-    <div id="articles"></div>
+<div class="panel">
+<h3>Artikel</h3>
+<div id="articles"></div>
 
-    <h3>Modifier</h3>
-    <div id="modifiers"></div>
-  </div>
+<h3>Modifier</h3>
+<div id="modifiers"></div>
+</div>
 
-  <div class="center">
-    <h3>Aktuelle Bestellung</h3>
-    <div id="order"></div>
-  </div>
+<div class="center">
+<h3>Bestellung</h3>
+<div id="order"></div>
+</div>
 
-  <div class="right">
-    <h3>Bons</h3>
-    <div id="bons"></div>
-  </div>
+<div class="right">
+<h3>Bons</h3>
+<div id="bons"></div>
+</div>
 
 </div>
 
 <script>
 
-// =====================
-// CONFIG
-// =====================
 const SHEET_ID = "1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
-
 const ARTICLE_URL = `https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
 const MODIFIER_URL = `https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
 
-// =====================
-// STATE
-// =====================
 let articles = [];
 let modifiers = [];
 
-let currentOrder = {
-  items: []
-};
-
+let currentOrder = { items: [] };
 let bons = [];
 let bonCounter = 1;
 
-// =====================
-// LOAD DATA
-// =====================
+// LOAD
 async function loadData() {
+  articles = await fetch(ARTICLE_URL).then(r => r.json());
+  modifiers = await fetch(MODIFIER_URL).then(r => r.json());
 
-  const a = await fetch(ARTICLE_URL).then(r => r.json());
-  const m = await fetch(MODIFIER_URL).then(r => r.json());
-
-  articles = a.map(x => ({
-    id: x.Nummer,
-    name: x.Name,
-    price: parseFloat(x.Preis),
-    voice: x.VoiceAlias
+  articles = articles.map(a => ({
+    name: a.Name,
+    price: Number(a.Preis),
+    voice: a.VoiceAlias
   }));
 
-modifiers = m.map(x => ({
-  id: x.Nummer,
-  name: x.Name,
-  price: Number(x.Preis) || 0,
-  voice: x.VoiceAlias
-}));
+  modifiers = modifiers.map(m => ({
+    name: m.Name,
+    price: Number(m.Preis || 0),
+    voice: m.VoiceAlias
+  }));
 
   render();
 }
 
+// RENDER
+function render() {
 
-// ============= Preise richtig formatieren
+  document.getElementById("articles").innerHTML =
+    articles.map(a => `<div class="item">${a.name} (${a.price}€)</div>`).join("");
 
+  document.getElementById("modifiers").innerHTML =
+    modifiers.map(m => `<div class="item">${m.name} (+${m.price}€)</div>`).join("");
+
+  document.getElementById("order").innerHTML =
+    currentOrder.items.map(i =>
+      `<div class="order-item">
+        ${i.qty}x ${i.name} (${i.price}€)
+      </div>`
+    ).join("");
+}
+
+// TOTAL (FIXED)
 function calcTotal(order) {
   let total = 0;
 
@@ -173,132 +118,8 @@ function calcTotal(order) {
   return total.toFixed(2);
 }
 
-
-
-// =====================
-// RENDER
-// =====================
-function render() {
-
-  document.getElementById("articles").innerHTML =
-    articles.map(a =>
-      `<div class="item">${a.id} - ${a.name} (${a.price}€)</div>`
-    ).join("");
-
-  document.getElementById("modifiers").innerHTML =
-    modifiers.map(m =>
-      `<div class="mod">${m.id} - ${m.name} (+${m.price}€)</div>`
-    ).join("");
-
-  document.getElementById("order").innerHTML =
-    currentOrder.items.map(i =>
-      `<div class="order-item">
-        ${i.qty}x ${i.name} (${i.price}€)
-        <br><small>${i.modifiers.map(m => m.name).join(", ")}</small>
-      </div>`
-    ).join("");
-
-  document.getElementById("bons").innerHTML =
-    bons.map(b => `<div class="bon">${b}</div>`).join("");
-}
-
-// =====================
-// QUANTITY PARSER
-// =====================
-function extractQty(text) {
-
-  const map = {
-    "eins": 1,
-    "ein": 1,
-    "eine": 1,
-    "zwei": 2,
-    "zweimal": 2,
-    "drei": 3,
-    "vier": 4
-  };
-
-  for (let k in map) {
-    if (text.includes(k)) return map[k];
-  }
-
-  const num = text.match(/\d+/);
-  return num ? parseInt(num[0]) : 1;
-}
-
-// =====================
-// TOTAL
-// =====================
-function calcTotal(order) {
-  let total = 0;
-
-  order.items.forEach(i => {
-    total += i.price * i.qty;
-
-    i.modifiers.forEach(m => {
-      total += m.price;
-    });
-  });
-
-  return total.toFixed(2);
-}
-
-// =====================
-// VOICE
-// =====================
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const recognition = new SpeechRecognition();
-
-recognition.lang = "de-DE";
-recognition.continuous = true;
-
-recognition.onresult = (e) => {
-
-  const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
-
-  console.log("VOICE:", text);
-
-  // CLOSE COMMAND
-  if (text.includes("bestellung abschließen")) {
-    closeOrder();
-    return;
-  }
-
-  const qty = extractQty(text);
-
-  const article = articles.find(a =>
-    text.includes(a.name.toLowerCase()) ||
-    (a.voice && a.voice.split(",").some(v => text.includes(v.trim())))
-  );
-
-  const mod = modifiers.find(m =>
-    text.includes(m.name.toLowerCase()) ||
-    (m.voice && m.voice.split(",").some(v => text.includes(v.trim())))
-  );
-
-  if (article) {
-    currentOrder.items.push({
-      name: article.name,
-      price: article.price,
-      qty: qty,
-      modifiers: []
-    });
-  }
-
-  if (mod && currentOrder.items.length > 0) {
-    currentOrder.items[currentOrder.items.length - 1].modifiers.push(mod);
-  }
-
-  render();
-};
-
-// =====================
 // CLOSE ORDER
-// =====================
 function closeOrder() {
-
-  if (currentOrder.items.length === 0) return;
-
-  const total = calcTotal(currentOrder);
 
   let bon = `BON #${bonCounter}\n-----------------\n`;
 
@@ -306,14 +127,13 @@ function closeOrder() {
     bon += `${i.qty}x ${i.name} (${i.price}€)\n`;
 
     if (i.modifiers.length) {
-      bon += `  + ${i.modifiers.map(m => m.name).join(", ")}\n`;
+      bon += ` + ${i.modifiers.map(m => m.name).join(", ")}\n`;
     }
   });
 
-  bon += `-----------------\nTOTAL: ${total}€\n`;
+  bon += `-----------------\nTOTAL: ${calcTotal(currentOrder)}€\n`;
 
   bons.push(bon);
-
   bonCounter++;
 
   currentOrder = { items: [] };
@@ -321,9 +141,41 @@ function closeOrder() {
   render();
 }
 
-// =====================
+// VOICE
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = new SpeechRecognition();
+recognition.lang = "de-DE";
+recognition.continuous = true;
+
+recognition.onresult = (e) => {
+
+  const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
+
+  if (text.includes("bestellung abschließen")) {
+    closeOrder();
+    return;
+  }
+
+  const article = articles.find(a => text.includes(a.name.toLowerCase()));
+  const mod = modifiers.find(m => text.includes(m.name.toLowerCase()));
+
+  if (article) {
+    currentOrder.items.push({
+      name: article.name,
+      price: article.price,
+      qty: 1,
+      modifiers: []
+    });
+  }
+
+  if (mod && currentOrder.items.length) {
+    currentOrder.items[currentOrder.items.length - 1].modifiers.push(mod);
+  }
+
+  render();
+};
+
 // BUTTONS
-// =====================
 document.getElementById("start").onclick = () => recognition.start();
 document.getElementById("stop").onclick = () => recognition.stop();
 document.getElementById("finish").onclick = closeOrder;
