@@ -262,37 +262,62 @@ function findModifierByVoice(text) {
 // VOICE INPUT
 // =========================
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const recognition = new SpeechRecognition();
 
+const recognition = new SpeechRecognition();
 recognition.lang = "de-DE";
 recognition.continuous = true;
+recognition.interimResults = false;
 
-recognition.onresult = (e) => {
-  const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
-
-  console.log("VOICE:", text);
-
-  let article = findArticleByVoice(text);
-
-  if (article) {
-    let order = createOrder(article);
-    orders.push(order);
+function startVoice() {
+  try {
+    recognition.start();
+    console.log("?? startVoice aufgerufen");
+  } catch (e) {
+    console.log("Start Error:", e);
   }
+}
 
-  let mod = findModifierByVoice(text);
-
-  if (mod && orders.length > 0) {
-    addModifierToOrder(orders[orders.length - 1], mod);
-  }
-
-  if (text.includes("küche") || text.includes("bon")) {
-    if (orders.length > 0) {
-      sendToKitchen(orders[orders.length - 1]);
-    }
-  }
-
-  render();
+recognition.onstart = () => {
+  console.log("?? Voice gestartet");
 };
+
+recognition.onerror = (e) => {
+  console.log("? Voice Fehler:", e.error);
+};
+
+recognition.onend = () => {
+  console.log("?? Voice beendet");
+};
+
+recognition.onstart = () => {
+  console.log("?? Voice gestartet");
+  log("?? Voice gestartet");
+};
+
+recognition.onerror = (e) => {
+  console.log("? Voice Fehler:", e.error);
+  log("? Voice Fehler: " + e.error);
+};
+
+recognition.onend = () => {
+  console.log("?? Voice beendet ? Restart");
+  log("?? Voice beendet");
+};
+
+recognition.onresult = (event) => {
+  const text = event.results[event.results.length - 1][0].transcript;
+  console.log("?? erkannt:", text);
+  log("?? " + text);
+};
+
+// ?? WICHTIG: stabile Startfunktion
+function startVoice() {
+  try {
+    recognition.start();
+  } catch (e) {
+    console.log("Start Error:", e);
+  }
+}
 
 // =========================
 // CONTROLS
@@ -304,6 +329,9 @@ document.getElementById("stop").onclick = () => recognition.stop();
 // INIT
 // =========================
 loadData();
+
+document.getElementById("start").onclick = () => startVoice();
+document.getElementById("stop").onclick = () => recognition.stop();
 
 </script>
 
