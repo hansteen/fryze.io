@@ -134,9 +134,21 @@ async function loadData() {
   const articleData = await loadSheet(ARTICLE_URL);
   const modifierData = await loadSheet(MODIFIER_URL);
 
-  // erwartet: [{name: "..."}] oder ähnliche Struktur
-  articles = articleData.map(a => a.name || Object.values(a)[0]);
-  modifiers = modifierData.map(m => m.name || Object.values(m)[0]);
+  articles = articleData.map(a => ({
+    nummer: a.Nummer,
+    name: a.Name,
+    preis: a.Preis,
+    category: a.Kategorie,
+    voice: a.VoiceAlias
+  }));
+
+  modifiers = modifierData.map(m => ({
+    nummer: m.Nummer,
+    name: m.Name,
+    preis: m.Preis,
+    category: m.Kategorie,
+    voice: m.VoiceAlias
+  }));
 
   render();
 }
@@ -145,18 +157,31 @@ async function loadData() {
 // RENDER
 // =========================
 function render() {
+
+  // ?? ARTIKEL (vollständig statt nur Nummern)
   articlesEl.innerHTML = articles
-    .map((a, i) => `<div class="item"><span class="num">${i+1}</span>${a}</div>`)
-    .join("");
+    .map((a) =>
+      `<div class="item">
+        <span class="num">${a.nummer}</span>
+        ${a.name} <small>(${a.preis}€)</small>
+      </div>`
+    ).join("");
 
+  // ?? MODIFIER (vollständig)
   modifiersEl.innerHTML = modifiers
-    .map((m, i) => `<div class="item"><span class="num">${i+1}</span>${m}</div>`)
-    .join("");
+    .map((m) =>
+      `<div class="item">
+        <span class="num">${m.nummer}</span>
+        ${m.name} <small>(${m.preis}€)</small>
+      </div>`
+    ).join("");
 
+  // ?? BESTELLUNG
   ordersEl.innerHTML = orders
     .map(o => `<div class="item">?? ${o.qty}x ${o.name}</div>`)
     .join("");
 
+  // ?? BONS
   bonsEl.innerHTML = bons
     .map(b => `<div class="bon">${b}</div>`)
     .join("");
