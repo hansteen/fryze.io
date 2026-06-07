@@ -2,30 +2,70 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<title>POS Fix Total</title>
+<title>Voice POS Fix Final</title>
 
 <style>
-body { font-family: Arial; margin: 0; background:#f4f4f4; }
-header { background:#111; color:#fff; padding:10px; }
-button { padding:8px; margin-right:5px; }
+body { margin:0; font-family:Arial; background:#f4f4f4; }
 
-.container { display:grid; grid-template-columns:1fr 1fr 1fr; height:90vh; }
+header {
+  background:#111;
+  color:#fff;
+  padding:10px;
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
 
-.panel { background:#fff; padding:10px; overflow:auto; border-right:1px solid #ddd; }
-.center { background:#fafafa; padding:10px; border-right:1px solid #ddd; }
-.right { background:#fff; padding:10px; }
+button {
+  padding:8px 10px;
+  border:none;
+  cursor:pointer;
+}
 
-.item { padding:5px; border-bottom:1px solid #eee; }
-.order-item { padding:5px; border-left:3px solid blue; margin-bottom:5px; }
+#start { background:#28a745; color:#fff; }
+#stop { background:#dc3545; color:#fff; }
+#finish { background:#ff9800; color:#fff; }
 
-.bon { background:#fff8dc; padding:10px; margin-bottom:10px; white-space:pre-wrap; border-left:4px solid gold; }
+.container {
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  height:90vh;
+}
+
+.panel, .center, .right {
+  padding:10px;
+  overflow:auto;
+}
+
+.panel { background:#fff; border-right:1px solid #ddd; }
+.center { background:#fafafa; border-right:1px solid #ddd; }
+.right { background:#fff; }
+
+.item, .mod {
+  padding:5px;
+  border-bottom:1px solid #eee;
+}
+
+.order-item {
+  padding:5px;
+  border-left:3px solid #2196f3;
+  margin-bottom:5px;
+}
+
+.bon {
+  white-space:pre-wrap;
+  background:#fff8dc;
+  padding:10px;
+  margin-bottom:10px;
+  border-left:4px solid gold;
+}
 </style>
 </head>
 
 <body>
 
 <header>
-?? POS Fix
+?? Voice POS Fix
 <button id="start">Start</button>
 <button id="stop">Stop</button>
 <button id="finish">Bestellung abschließen</button>
@@ -55,10 +95,16 @@ button { padding:8px; margin-right:5px; }
 
 <script>
 
+// =====================
+// CONFIG
+// =====================
 const SHEET_ID = "1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
 const ARTICLE_URL = `https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
 const MODIFIER_URL = `https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
 
+// =====================
+// STATE
+// =====================
 let articles = [];
 let modifiers = [];
 
@@ -66,44 +112,63 @@ let currentOrder = { items: [] };
 let bons = [];
 let bonCounter = 1;
 
-// LOAD
-async function loadData() {
-  articles = await fetch(ARTICLE_URL).then(r => r.json());
-  modifiers = await fetch(MODIFIER_URL).then(r => r.json());
+// =====================
+// FORMAT PRICE (IMPORTANT)
+// =====================
+function fmt(p) {
+  return Number(p).toFixed(2);
+}
 
-  articles = articles.map(a => ({
-    name: a.Name,
-    price: Number(a.Preis),
-    voice: a.VoiceAlias
+// =====================
+// LOAD DATA
+// =====================
+async function loadData() {
+
+  const a = await fetch(ARTICLE_URL).then(r => r.json());
+  const m = await fetch(MODIFIER_URL).then(r => r.json());
+
+  articles = a.map(x => ({
+    name: x.Name,
+    price: Number(x.Preis),
+    voice: x.VoiceAlias
   }));
 
-  modifiers = modifiers.map(m => ({
-    name: m.Name,
-    price: Number(m.Preis || 0),
-    voice: m.VoiceAlias
+  modifiers = m.map(x => ({
+    name: x.Name,
+    price: Number(x.Preis || 0),
+    voice: x.VoiceAlias
   }));
 
   render();
 }
 
+// =====================
 // RENDER
+// =====================
 function render() {
 
   document.getElementById("articles").innerHTML =
-    articles.map(a => `<div class="item">${a.name} (${a.price}€)</div>`).join("");
+    articles.map(a =>
+      `<div class="item">${a.name} (${fmt(a.price)}€)</div>`
+    ).join("");
 
   document.getElementById("modifiers").innerHTML =
-    modifiers.map(m => `<div class="item">${m.name} (+${m.price}€)</div>`).join("");
+    modifiers.map(m =>
+      `<div class="mod">${m.name} (+${fmt(m.price)}€)</div>`
+    ).join("");
 
   document.getElementById("order").innerHTML =
     currentOrder.items.map(i =>
       `<div class="order-item">
-        ${i.qty}x ${i.name} (${i.price}€)
+        ${i.qty}x ${i.name} (${fmt(i.price)}€)
+        <br><small>${i.modifiers.map(m => m.name).join(", ")}</small>
       </div>`
     ).join("");
 }
 
-// TOTAL (FIXED)
+// =====================
+// TOTAL
+// =====================
 function calcTotal(order) {
   let total = 0;
 
@@ -115,23 +180,27 @@ function calcTotal(order) {
     });
   });
 
-  return total.toFixed(2);
+  return total;
 }
 
+// =====================
 // CLOSE ORDER
+// =====================
 function closeOrder() {
+
+  if (currentOrder.items.length === 0) return;
 
   let bon = `BON #${bonCounter}\n-----------------\n`;
 
   currentOrder.items.forEach(i => {
-    bon += `${i.qty}x ${i.name} (${i.price}€)\n`;
+    bon += `${i.qty}x ${i.name} (${fmt(i.price)}€)\n`;
 
     if (i.modifiers.length) {
-      bon += ` + ${i.modifiers.map(m => m.name).join(", ")}\n`;
+      bon += ` + ${i.modifiers.map(m => `${m.name} (${fmt(m.price)}€)`).join(", ")}\n`;
     }
   });
 
-  bon += `-----------------\nTOTAL: ${calcTotal(currentOrder)}€\n`;
+  bon += `-----------------\nTOTAL: ${fmt(calcTotal(currentOrder))}€\n`;
 
   bons.push(bon);
   bonCounter++;
@@ -141,9 +210,12 @@ function closeOrder() {
   render();
 }
 
+// =====================
 // VOICE
+// =====================
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const recognition = new SpeechRecognition();
+
 recognition.lang = "de-DE";
 recognition.continuous = true;
 
@@ -156,8 +228,13 @@ recognition.onresult = (e) => {
     return;
   }
 
-  const article = articles.find(a => text.includes(a.name.toLowerCase()));
-  const mod = modifiers.find(m => text.includes(m.name.toLowerCase()));
+  const article = articles.find(a =>
+    text.includes(a.name.toLowerCase())
+  );
+
+  const mod = modifiers.find(m =>
+    text.includes(m.name.toLowerCase())
+  );
 
   if (article) {
     currentOrder.items.push({
@@ -175,7 +252,9 @@ recognition.onresult = (e) => {
   render();
 };
 
+// =====================
 // BUTTONS
+// =====================
 document.getElementById("start").onclick = () => recognition.start();
 document.getElementById("stop").onclick = () => recognition.stop();
 document.getElementById("finish").onclick = closeOrder;
