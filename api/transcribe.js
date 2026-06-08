@@ -18,24 +18,24 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Nur POST erlaubt" });
   }
 
-  const form = new formidable.IncomingForm();
+  const form = formidable({ multiples: false });
 
   form.parse(req, async (err, fields, files) => {
 
     if (err) {
-      return res.status(500).json({ error: "Form Fehler" });
+      return res.status(500).json({ error: "Form Error" });
     }
 
     try {
 
-      const file = files.audio;
+      const audioFile = files.audio;
 
-      if (!file) {
-        return res.status(400).json({ error: "Keine Audio-Datei" });
+      if (!audioFile) {
+        return res.status(400).json({ error: "Keine Audio-Datei erhalten" });
       }
 
       const transcription = await openai.audio.transcriptions.create({
-        file: fs.createReadStream(file.filepath),
+        file: fs.createReadStream(audioFile.filepath),
         model: "gpt-4o-mini-transcribe",
         language: "de"
       });
