@@ -1,46 +1,90 @@
-// 1. Werkzeuge laden
-require('dotenv').config(); // Lädt den Key aus der .env-Datei
+```js
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
+const multer = require('multer');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-// 2. Einstellungen für den Server
-app.use(cors()); // Erlaubt Ihrer HTML-Datei, mit dem Server zu reden
-app.use(express.json()); // Erlaubt dem Server, JSON-Daten zu lesen
+app.use(cors());
 
-// 3. Der sichere API-Endpunkt
-app.post('/api/chat', async (req, res) => {
+const upload = multer({
+  storage: multer.memoryStorage()
+});
+
+// =================================
+// Sprach-Transkription
+// =================================
+app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
+
   try {
-    const userMessage = req.body.message;
-    const apiKey = process.env.OPENAI_API_KEY; // Ihr geheimer Key!
 
-    // Hier senden wir die Anfrage an OpenAI
-    const response = await fetch('https://openai.com', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}` // Der Key wird niemals an den Browser geschickt
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini', // Oder ein anderes Modell Ihrer Wahl
-        messages: [{ role: 'user', content: userMessage }]
-      })
-    });
+    const apiKey = process.env.OPENAI_API_KEY;
+
+    if (!req.file) {
+      return res.status(400).json({
+        error: 'Keine Audio-Datei erhalten.'
+      });
+    }
+
+    const formData = new FormData();
+
+    const audioBlob = new Blob(
+      [req.file.buffer],
+      { type: req.file.mimetype }
+    );
+
+    formData.append(
+      'file',
+      audioBlob,
+      'speech.webm'
+    );
+
+    formData.append(
+      'model',
+      'gpt-4o-mini-transcribe'
+    );
+
+    formData.append(
+      'language',
+      'de'
+    );
+
+    const response = await fetch(
+      'https://api.openai.com/v1/audio/transcriptions',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: formData
+      }
+    );
 
     const data = await response.json();
-    
-    // Wir schicken nur die Text-Antwort zurück an die HTML-Datei
-    res.json({ answer: data.choices[0].message.content });
+
+    console.log('Transcript:', data.text);
+
+    res.json({
+      transcript: data.text || ''
+    });
 
   } catch (error) {
-    console.error('Fehler:', error);
-    res.status(500).json({ error: 'Etwas ist schiefgelaufen.' });
+
+    console.error(error);
+
+    res.status(500).json({
+      error: 'Transkription fehlgeschlagen.'
+    });
   }
 });
 
-// 4. Server starten
+// =================================
+// Server starten
+// =================================
 app.listen(PORT, () => {
-  console.log(`Server läuft sicher auf http://localhost:${PORT}`);
+  console.log(`Server läuft auf Port ${PORT}`);
 });
+```
