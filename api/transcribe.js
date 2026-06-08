@@ -1,8 +1,6 @@
 import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+import formidable from "formidable";
+import fs from "fs";
 
 export const config = {
   api: {
@@ -10,36 +8,48 @@ export const config = {
   }
 };
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
 export default async function handler(req, res) {
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Nur POST erlaubt" });
   }
 
-  try {
+  const form = new formidable.IncomingForm();
 
-    const formData = await req.formData();
-    const audio = formData.get("audio");
+  form.parse(req, async (err, fields, files) => {
 
-    if (!audio) {
-      return res.status(400).json({ error: "Keine Audio-Datei" });
+    if (err) {
+      return res.status(500).json({ error: "Form Fehler" });
     }
 
-    const transcription = await openai.audio.transcriptions.create({
-      file: audio,
-      model: "gpt-4o-mini-transcribe",
-      language: "de"
-    });
+    try {
 
-    return res.status(200).json({
-      transcript: transcription.text
-    });
+      const file = files.audio;
 
-  } catch (err) {
-    console.error(err);
+      if (!file) {
+        return res.status(400).json({ error: "Keine Audio-Datei" });
+      }
 
-    return res.status(500).json({
-      error: "Transkription fehlgeschlagen"
-    });
-  }
+      const transcription = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(file.filepath),
+        model: "gpt-4o-mini-transcribe",
+        language: "de"
+      });
+
+      return res.status(200).json({
+        transcript: transcription.text
+      });
+
+    } catch (e) {
+      console.error(e);
+
+      return res.status(500).json({
+        error: "Transkription fehlgeschlagen"
+      });
+    }
+  });
 }
