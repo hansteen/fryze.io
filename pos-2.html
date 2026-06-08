@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<title>Stable Voice POS vFinal</title>
+<title>Voice POS Stable FINAL</title>
 
 <style>
 body { margin:0; font-family:Arial; background:#f4f4f4; }
@@ -90,16 +90,10 @@ button { padding:8px; cursor:pointer; }
 
 <script>
 
-// =====================
-// CONFIG
-// =====================
 const SHEET_ID = "1yCC-8iwWWHPUejZcoc92U-Qy3RMPa1s2nUswYrsLYx4";
 const ARTICLE_URL = `https://opensheet.elk.sh/${SHEET_ID}/Artikel`;
 const MODIFIER_URL = `https://opensheet.elk.sh/${SHEET_ID}/Modifier`;
 
-// =====================
-// STATE
-// =====================
 let articles = [];
 let modifiers = [];
 
@@ -107,22 +101,13 @@ let currentOrder = { items: [] };
 let bons = [];
 let bonCounter = 1;
 
-// =====================
-// AUDIO
-// =====================
 let mediaRecorder;
 let audioChunks = [];
 
-// =====================
-// FORMAT
-// =====================
 function fmt(p){
   return Number(p || 0).toFixed(2);
 }
 
-// =====================
-// LOAD DATA
-// =====================
 async function loadData() {
 
   const a = await fetch(ARTICLE_URL).then(r => r.json());
@@ -145,9 +130,6 @@ async function loadData() {
   render();
 }
 
-// =====================
-// QTY
-// =====================
 function extractQty(text) {
   const map = {
     "eins":1,"ein":1,"eine":1,
@@ -164,9 +146,6 @@ function extractQty(text) {
   return num ? parseInt(num[0]) : 1;
 }
 
-// =====================
-// MATCHING
-// =====================
 function findModifier(text) {
   return modifiers.find(m => {
     const name = m.name.toLowerCase();
@@ -188,9 +167,6 @@ function findArticle(text) {
   );
 }
 
-// =====================
-// RENDER
-// =====================
 function render() {
 
   document.getElementById("articles").innerHTML =
@@ -215,9 +191,6 @@ function render() {
     bons.map(b => `<div class="bon">${b}</div>`).join("");
 }
 
-// =====================
-// TOTAL
-// =====================
 function calcTotal(order){
   let total = 0;
 
@@ -229,9 +202,6 @@ function calcTotal(order){
   return total;
 }
 
-// =====================
-// CLOSE ORDER
-// =====================
 function closeOrder(){
 
   if(currentOrder.items.length === 0) return;
@@ -257,9 +227,6 @@ function closeOrder(){
   render();
 }
 
-// =====================
-// VOICE (OPENAI TRANSCRIBE)
-// =====================
 document.getElementById("start").onclick = async () => {
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -276,6 +243,11 @@ document.getElementById("start").onclick = async () => {
 
     const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
 
+    if (audioBlob.size === 0) {
+      console.error("Empty audio");
+      return;
+    }
+
     const formData = new FormData();
     formData.append("audio", audioBlob, "voice.webm");
 
@@ -283,6 +255,11 @@ document.getElementById("start").onclick = async () => {
       method: "POST",
       body: formData
     });
+
+    if (!res.ok) {
+      console.error("API Error:", res.status);
+      return;
+    }
 
     const data = await res.json();
 
@@ -319,12 +296,11 @@ document.getElementById("start").onclick = async () => {
 };
 
 document.getElementById("stop").onclick = () => {
-  mediaRecorder.stop();
+  if (mediaRecorder) mediaRecorder.stop();
 };
 
 document.getElementById("finish").onclick = closeOrder;
 
-// INIT
 loadData();
 
 </script>
