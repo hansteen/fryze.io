@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AMAIVI AI Guidance Demo v3</title>
+<style>
+:root{--nav:#0c2036;--blue:#075ee5;--purple:#6538c8;--ink:#111b2b}
+*{box-sizing:border-box} body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#e9eef4;color:var(--ink)}
+header{height:56px;background:#0b1d31;color:#fff;display:flex;align-items:center;padding:0 22px;gap:18px}
+header b{font-size:18px}.muted{opacity:.72;font-size:12px}.pips{margin-left:auto;display:flex;gap:7px}.pip{padding:6px 10px;border-radius:15px;background:#ffffff1b;font-size:11px}.pip.on{background:#fff;color:#10233b;font-weight:700}
+.wrap{max-width:1500px;margin:18px auto;padding:0 16px}
+.viewport{position:relative;aspect-ratio:1.5/1;min-height:680px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 14px 40px #10253d2b}
+.bg{position:absolute;inset:0;background-size:contain;background-position:left top;background-repeat:no-repeat;background-color:#fff}
+.ai{position:absolute;right:22px;top:22px;width:360px;background:#fff;border-radius:13px;box-shadow:0 18px 55px #0006;overflow:hidden;z-index:5}
+.aihead{background:linear-gradient(90deg,#163d69,#6538c8);color:#fff;padding:14px 16px;display:flex;justify-content:space-between}
+.aibody{padding:15px}.ctx{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#6e7b8d;font-weight:800}.msg{font-size:14px;line-height:1.45;margin:8px 0 12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.chip{border:1px solid #d2dae5;background:#f7f9fb;border-radius:15px;padding:6px 9px;font-size:11px;cursor:pointer}
+.ask{display:flex;gap:7px}.ask input{flex:1;border:1px solid #bdc8d5;border-radius:5px;padding:9px}.ask button{border:0;background:#173552;color:#fff;border-radius:5px;padding:0 12px;cursor:pointer}
+.editor{position:absolute;z-index:4;background:#fff;border:2px solid #5b37c8;border-radius:9px;box-shadow:0 13px 35px #0004;padding:13px;width:360px}
+.editor h4{margin:0 0 10px;font-size:13px}.field{margin:7px 0}label{display:block;font-size:10px;font-weight:700;margin-bottom:4px;color:#4e5a6a}
+input,select,textarea{width:100%;border:1px solid #b9c5d2;border-radius:4px;padding:8px;font:inherit;font-size:12px;background:#fff}textarea{resize:vertical;min-height:55px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.checks{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;margin:8px 0}.checks label{display:flex;align-items:center;gap:5px;font-weight:500}.checks input{width:auto}
+.actions{display:flex;justify-content:flex-end;gap:7px;margin-top:9px}.btn{border:0;border-radius:5px;padding:8px 11px;cursor:pointer}.primary{background:#0863e5;color:#fff}.ghost{background:#edf1f5}
+.nav{display:flex;justify-content:space-between;margin-top:12px}.nav button{border:0;border-radius:6px;padding:10px 15px;cursor:pointer}.next{background:#112f4e;color:#fff}
+.hint{font-size:10px;color:#768395;margin-top:8px}
+@media(max-width:950px){.ai{width:320px;right:10px}.editor{left:20px!important;bottom:20px!important;top:auto!important}.viewport{min-height:760px}}
+</style></head><body>
+<header><b>AMAIVI</b><span class="muted">AI Guidance · Clickable Workflow Demo</span><div class="pips" id="pips"></div></header>
+<div class="wrap"><div class="viewport"><div class="bg" id="bg"></div>
+<div class="editor" id="editor"></div>
+<aside class="ai"><div class="aihead"><b>Ask AMAIVI</b><span>✦</span></div><div class="aibody">
+<div class="ctx" id="ctx"></div><div class="msg" id="msg"></div><div class="chips" id="chips"></div>
+<div class="ask"><input id="q" placeholder="Frage zu diesem View oder allgemein …"><button onclick="ask()">Fragen</button></div>
+<div class="hint">Demo-Knowledge-Base · Eingaben bleiben beim Wechsel der Seiten erhalten.</div></div></aside>
+</div><div class="nav"><button onclick="prev()">← Zurück</button><button class="next" onclick="next()">Weiter →</button></div></div>
+<script>
+const state={name:"",category:"",desc:"",price:"",bundle:"Mixed Box",group:"GRP-001"};
+const steps=[
+{img:"assets/screen1.png",ctx:"Stammdaten · Artikel (alle)",msg:"Du befindest dich in den Artikel-Stammdaten. Hier prüfst du vorhandene Artikel und Kategorien. Für die Bundle Creation müssen die später verwendeten Standardartikel zunächst als Stammdaten vorhanden sein.",chips:["Warum beginne ich bei Stammdaten?","Was ist ein Artikel?","Was ist ein AMAIVI Code?"]},
+{img:"assets/screen2.png",ctx:"New Item (Standard) · Basic Data",msg:"Lege jetzt einen Standardartikel an. Name, Kategorie, Mengeneinheit und Preis bilden die Basis. Nach dem Speichern kann dieser Artikel in Selection Groups eines Bundles verwendet werden.",chips:["Was bedeutet STD?","Welche Felder sind Pflicht?","Warum brauche ich eine UOM?"]},
+{img:"assets/screen3.png",ctx:"BND-001 Mixed Box · Configuration",msg:"Jetzt definierst du die Bundle-Artikelbeziehungen. Wähle die STD-Artikel, die Gäste innerhalb der Mixed Box auswählen dürfen. Die Selection Group fasst diese Artikel zusammen und trägt anschließend die Auswahlregel.",chips:["Was ist eine Selection Group?","Was bedeutet Exactly 3 of 5?","Warum werden zuerst STDs angelegt?"]}
+];
+let i=0;
+function form(){
+ if(i===0)return `<h4>Demo-Eingabe · Stammdaten vorbereiten</h4><div class="field"><label>Artikelname</label><input id="name" value="${state.name}" placeholder="z. B. Onion Rings, 6 Stück"></div><div class="grid"><div class="field"><label>Kategorie</label><select id="category"><option>Starters / Vorspeisen</option><option>Main / Hauptgerichte</option><option>Sides / Beilagen</option></select></div><div class="field"><label>AMAIVI Code</label><input value="wird automatisch erzeugt" disabled></div></div><div class="actions"><button class="btn primary" onclick="saveAndNext()">Artikel vorbereiten</button></div>`;
+ if(i===1)return `<h4>Demo-Eingabe · New Item (Standard)</h4><div class="field"><label>Name *</label><input id="name" value="${state.name||'Onion Rings, 6 Stück'}"></div><div class="grid"><div class="field"><label>Category *</label><select id="category"><option>Starters / Vorspeisen</option><option>Sides / Beilagen</option></select></div><div class="field"><label>Price *</label><input id="price" value="${state.price||'3,50'}"></div></div><div class="field"><label>Description</label><textarea id="desc">${state.desc||'Knusprige Zwiebelringe im Bierteig, 6 Stück.'}</textarea></div><div class="grid"><div class="field"><label>Default UOM *</label><select><option>Portion</option><option>Piece</option></select></div><div class="field"><label>Default Quantity *</label><input value="1"></div></div><div class="checks"><label><input type="checkbox" checked> Active</label><label><input type="checkbox" checked> Available in POS</label></div><div class="actions"><button class="btn ghost" onclick="prev()">Zurück</button><button class="btn primary" onclick="saveAndNext()">Save & Next</button></div>`;
+ return `<h4>Demo-Eingabe · Mixed Box konfigurieren</h4><div class="grid"><div class="field"><label>Bundle Name *</label><input id="bundle" value="${state.bundle}"></div><div class="field"><label>Selection Group</label><input id="group" value="${state.group}"></div></div><div class="field"><label>Auswahlregel</label><select><option>Exactly 3 of 5</option><option>Choose 1 of 5</option><option>Up to 3 of 5</option></select></div><div class="checks"><label><input type="checkbox" checked> STD-001 Onion Rings</label><label><input type="checkbox" checked> STD-002 Chicken Nuggets</label><label><input type="checkbox" checked> STD-003 Chicken Wings</label><label><input type="checkbox" checked> STD-004 Broccoli & Cheese Nuggets</label><label><input type="checkbox" checked> STD-005 Hot Chili Cheese Nuggets</label></div><div class="actions"><button class="btn ghost" onclick="prev()">Zurück</button><button class="btn primary" onclick="alert('Demo: Bundle-Konfiguration gespeichert.')">Konfiguration speichern</button></div>`;
+}
+function persist(){["name","category","desc","price","bundle","group"].forEach(k=>{let e=document.getElementById(k);if(e)state[k]=e.value})}
+function saveAndNext(){persist();next()}
+function answer(s){s=s.toLowerCase();
+ if(s.includes("exactly")||s.includes("3 of 5"))return "„Exactly 3 of 5“ bedeutet: Der Gast muss genau drei der fünf angebotenen Auswahlmöglichkeiten wählen. Die Regel gehört zur Selection Group.";
+ if(s.includes("selection"))return "Eine Selection Group bündelt die Artikel, zwischen denen der Gast innerhalb eines Bundles auswählen kann. Sie enthält außerdem Regeln wie Mindest- und Höchstauswahl.";
+ if(s.includes("uom"))return "Die UOM beschreibt die Basiseinheit des Artikels, zum Beispiel Portion oder Stück. Sie sorgt dafür, dass Mengen und spätere Beziehungen eindeutig verarbeitet werden.";
+ if(s.includes("std"))return "STD bezeichnet einen Standardartikel. Er wird eigenständig angelegt und kann anschließend als Bestandteil eines Bundles verwendet werden.";
+ if(s.includes("code"))return "Der AMAIVI Code identifiziert einen Artikel eindeutig. Er wird für Beziehungen, Regeln und die weitere technische Verarbeitung genutzt.";
+ if(s.includes("pflicht"))return "In diesem Demo-Schritt sind insbesondere Name, Kategorie, UOM, Menge und Preis als zentrale Basisangaben vorgesehen.";
+ if(s.includes("stammdaten"))return "Die Bundle-Konfiguration kann nur zuverlässig auf bereits eindeutig angelegte Artikel verweisen. Deshalb beginnt der Workflow mit den Stammdaten.";
+ if(s.includes("artikel"))return "Ein Artikel ist ein eindeutig angelegtes Produkt im RMS. Seine Stammdaten bilden die Grundlage für Preise, Regeln, Zuordnungen und Bundles.";
+ return "Für diese Frage ist noch kein freigegebener Knowledge-Base-Eintrag vorhanden. Genau solche Fragen können wir beim gemeinsamen Test sammeln und ergänzen.";
+}
+function render(){bg.style.backgroundImage=`url('${steps[i].img}')`;ctx.textContent=steps[i].ctx;msg.textContent=steps[i].msg;editor.innerHTML=form();
+ editor.style.cssText=i===0?"left:250px;top:205px":i===1?"left:540px;top:190px": "left:265px;top:320px";
+ chips.innerHTML=steps[i].chips.map(x=>`<button class="chip" onclick='quick(${JSON.stringify(x)})'>${x}</button>`).join("");
+ pips.innerHTML=steps.map((_,n)=>`<span class="pip ${n===i?'on':''}">Step ${n+1}</span>`).join("");
+}
+function quick(x){msg.textContent=answer(x)}function ask(){let x=q.value.trim();if(x){msg.textContent=answer(x);q.value=""}}
+function next(){persist();if(i<2){i++;render()}else alert("Ende der 3-Screen-Demo.")}function prev(){persist();if(i>0){i--;render()}}
+q.addEventListener("keydown",e=>{if(e.key==="Enter")ask()});render();
+</script></body></html>
